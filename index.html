@@ -11,7 +11,70 @@
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="app-startup-loader" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: system-ui, -apple-system, sans-serif; background-color: #f5f5f4; color: #44403c; padding: 20px; text-align: center;">
+        <div style="width: 38px; height: 38px; border: 3px solid #e7e5e4; border-top-color: #059669; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 14px;"></div>
+        <p style="font-size: 14px; font-weight: 600; margin: 0 0 4px 0; color: #1c1917;">Đang khởi động ứng dụng...</p>
+        <p style="font-size: 12px; color: #78716c; margin: 0;">Translation Challenge</p>
+      </div>
+    </div>
+    <style>
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <script>
+      (function() {
+        window.__startupErrors = [];
+        function displayStartupError(message, details) {
+          var root = document.getElementById('root');
+          var loader = document.getElementById('app-startup-loader');
+          if (loader && root && root.contains(loader)) {
+            root.innerHTML = 
+              '<div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: system-ui, -apple-system, sans-serif; background: #fafaf9; padding: 20px; box-sizing: border-box;">' +
+              '  <div style="max-width: 480px; width: 100%; background: #ffffff; border: 1px solid #fecdd3; border-radius: 16px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06);">' +
+              '    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">' +
+              '      <div style="width: 40px; height: 40px; background: #ffe4e6; color: #e11d48; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px;">⚠️</div>' +
+              '      <div>' +
+              '        <h2 style="font-size: 16px; font-weight: 700; color: #1c1917; margin: 0;">Báo cáo sự cố khởi chạy</h2>' +
+              '        <p style="font-size: 12px; color: #78716c; margin: 2px 0 0 0;">Startup / Resource Loading Error</p>' +
+              '      </div>' +
+              '    </div>' +
+              '    <p style="font-size: 13px; color: #44403c; line-height: 1.5; margin: 0 0 12px 0;">Không thể tải các tệp JavaScript cần thiết để chạy ứng dụng:</p>' +
+              '    <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 12px; font-size: 11px; color: #9f1239; font-family: monospace; word-break: break-all; margin-bottom: 16px; max-height: 160px; overflow-y: auto;">' +
+              '      <strong>Lỗi: </strong>' + (message || 'Unknown error') + (details ? '<br><span style="color:#64748b;">Nguồn: ' + details + '</span>' : '') +
+              '    </div>' +
+              '    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; font-size: 11px; color: #475569; margin-bottom: 16px;">' +
+              '      <strong>URL hiện tại: </strong>' + window.location.href +
+              '    </div>' +
+              '    <div style="display: flex; gap: 8px; flex-wrap: wrap;">' +
+              '      <button onclick="window.location.reload()" style="flex: 1; min-width: 140px; padding: 10px 16px; background: #059669; color: #ffffff; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">Tải lại trang</button>' +
+              '      <button onclick="navigator.clipboard.writeText(window.location.href + \'\\n\' + \'' + (message || '').replace(/'/g, "\\'") + '\'); alert(\'Đã sao chép thông tin lỗi!\')" style="padding: 10px 14px; background: #f5f5f4; color: #44403c; border: 1px solid #d6d3d1; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">Sao chép</button>' +
+              '    </div>' +
+              '  </div>' +
+              '</div>';
+          }
+        }
+
+        window.addEventListener('error', function(event) {
+          var msg = event.message || (event.error && event.error.message) || String(event);
+          var src = event.filename ? (event.filename + (event.lineno ? (':' + event.lineno) : '')) : '';
+          window.__startupErrors.push({ msg: msg, src: src });
+          displayStartupError(msg, src);
+        });
+
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event.reason ? (event.reason.message || String(event.reason)) : 'Unhandled rejection';
+          window.__startupErrors.push({ msg: reason, src: 'Promise' });
+          displayStartupError(reason, 'Promise rejection');
+        });
+
+        setTimeout(function() {
+          var loader = document.getElementById('app-startup-loader');
+          if (loader && document.getElementById('root') && document.getElementById('root').contains(loader)) {
+            displayStartupError('Quá thời gian tải tài nguyên ứng dụng (Resource timeout). Vui lòng kiểm tra kết nối mạng hoặc thử lại.', window.location.href);
+          }
+        }, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
