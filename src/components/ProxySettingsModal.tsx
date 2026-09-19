@@ -41,7 +41,10 @@ export const ProxySettingsModal: React.FC<ProxySettingsModalProps> = ({
     setTesting(true);
     setTestResult(null);
 
-    const targetUrl = currentProvider?.workerUrl || "https://groq.nclong87.workers.dev/openai/v1";
+    const targetUrl =
+      currentProvider?.workerUrl && !currentProvider.workerUrl.startsWith("/")
+        ? currentProvider.workerUrl
+        : "https://groq.nclong87.workers.dev/openai/v1";
     const targetModel = currentProvider?.models[0] || "llama-3.3-70b-versatile";
 
     try {

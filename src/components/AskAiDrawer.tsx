@@ -98,12 +98,12 @@ export function AskAiDrawer({
           suggestedFollowUps: res.suggestedFollowUps,
         },
       ]);
-    } catch {
+    } catch (err: any) {
       setMessages((prev) => [
         ...prev,
         {
           sender: "ai",
-          text: "Xin lỗi, đã có lỗi khi kết nối với gia sư AI. Vui lòng thử lại câu hỏi nhé!",
+          text: `⚠️ **Lỗi kết nối gia sư AI**: ${err?.message || "Không thể kết nối với gia sư AI"}. Vui lòng kiểm tra lại Access Key hoặc kết nối mạng.`,
         },
       ]);
     } finally {

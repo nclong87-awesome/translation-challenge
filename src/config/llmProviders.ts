@@ -11,7 +11,7 @@ export const PROVIDER_OPTIONS: LLMProviderConfig[] = [
   {
     id: "auto",
     name: "Tự động điều phối (Auto Edge Router)",
-    workerUrl: "/v1/chat/completions",
+    workerUrl: "https://groq.nclong87.workers.dev/openai/v1",
     badge: "Multi-Tier Rotation",
     description: "Tự động phân tầng hiệu năng (Tier 1 <15s, Tier 2, Tier 4), probing mẫu đơn, khám phá ε-Greedy, và tự động chuyển đổi khi lỗi.",
     models: ["auto-routing"]

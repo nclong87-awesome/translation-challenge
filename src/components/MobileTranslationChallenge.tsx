@@ -66,6 +66,7 @@ export function MobileTranslationChallenge({
   const [isProxyDashboardOpen, setIsProxyDashboardOpen] = useState(false);
   const [isAuditLogsOpen, setIsAuditLogsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [challengeError, setChallengeError] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -107,15 +108,19 @@ export function MobileTranslationChallenge({
 
   const loadNewChallenge = async (currentCollection = collection) => {
     setLoading(true);
+    setChallengeError(null);
     setResult(null);
     setUserTranslation("");
     setShowClues(false);
     try {
       const data = await generateChallenge(currentCollection);
       setChallenge(data);
-    } catch (err) {
+      setChallengeError(null);
+    } catch (err: any) {
       console.error("Failed to load challenge", err);
-      showToast("Không thể tải thử thách mới, đang dùng thử thách mẫu.");
+      const msg = err?.message || "Không thể tải thử thách mới.";
+      setChallengeError(msg);
+      showToast(msg);
     } finally {
       setLoading(false);
       setTimeout(() => {
@@ -175,9 +180,9 @@ export function MobileTranslationChallenge({
           return updated;
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Evaluation error", err);
-      showToast("Có lỗi khi chấm bài, vui lòng thử lại.");
+      showToast(err?.message || "Có lỗi khi chấm bài, vui lòng thử lại.");
     } finally {
       setSubmitting(false);
     }
@@ -386,6 +391,51 @@ export function MobileTranslationChallenge({
                   ? "Đang chọn từ trong bộ sưu tập cá nhân (>24h)..."
                   : "Đang chọn câu hội thoại thường ngày tự nhiên..."}
               </p>
+            </div>
+          </div>
+        ) : challengeError ? (
+          <div className="bg-white rounded-3xl p-6 border border-red-200 shadow-sm flex flex-col items-center text-center gap-4 my-auto">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 border border-red-200 flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div className="space-y-1.5 max-w-sm">
+              <h3 className="text-base font-bold text-stone-900">
+                Không thể tải thử thách từ Cloudflare LLM
+              </h3>
+              <div className="text-xs text-red-600 font-mono bg-red-50 p-3 rounded-xl border border-red-100 break-words text-left">
+                {challengeError}
+              </div>
+              <p className="text-[11px] text-stone-500 pt-1">
+                Vui lòng kiểm tra mã Access Key của Cloudflare Worker hoặc cấu hình proxy.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => loadNewChallenge()}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition active:scale-95 flex items-center gap-1.5 shadow-xs"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Thử lại
+              </button>
+              {onChangeAccessKey && (
+                <button
+                  type="button"
+                  onClick={onChangeAccessKey}
+                  className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold border border-stone-200 transition active:scale-95 flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-stone-600" />
+                  Đổi Access Key
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsProxySettingsOpen(true)}
+                className="px-4 py-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-800 text-xs font-semibold border border-orange-200 transition active:scale-95 flex items-center gap-1.5"
+              >
+                <Zap className="w-3.5 h-3.5 text-orange-500" />
+                Cài đặt Proxy
+              </button>
             </div>
           </div>
         ) : !challenge ? (
