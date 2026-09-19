@@ -33,6 +33,7 @@ export function AskAiDrawer({
   const [showSpoiledTranslation, setShowSpoiledTranslation] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [failedModel, setFailedModel] = useState<string | undefined>(undefined);
+  const [retryCount, setRetryCount] = useState<number>(0);
   const [lastQuery, setLastQuery] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -125,12 +126,14 @@ export function AskAiDrawer({
       ]);
       setErrorMessage(null);
       setFailedModel(undefined);
+      setRetryCount(0);
     } catch (err: any) {
       if (controller.signal.aborted || err.name === "AbortError") {
         return;
       }
       setErrorMessage(err?.message || "Không thể kết nối với gia sư AI");
       setFailedModel(err?.failedModel);
+      setRetryCount((prev) => prev + 1);
     } finally {
       setLoading(false);
       abortControllerRef.current = null;
@@ -261,10 +264,13 @@ export function AskAiDrawer({
               <RetryCountdownBanner
                 errorMessage={errorMessage}
                 failedModel={failedModel}
+                retryCount={retryCount}
+                maxRetries={3}
                 onRetry={() => handleSend(lastQuery)}
                 onDismiss={() => {
                   setErrorMessage(null);
                   setFailedModel(undefined);
+                  setRetryCount(0);
                 }}
               />
             </div>

@@ -21,7 +21,7 @@ app.use(express.json());
 
 // Helper to extract Cloudflare Worker access key from incoming request headers or server env
 function extractProxyKey(req: Request): string {
-  const headerKey = req.headers["x-proxy-key"] || req.headers["x-access-key"];
+  const headerKey = req.headers["x-access-key"];
   if (typeof headerKey === "string" && headerKey.trim()) {
     return headerKey.trim();
   }
@@ -32,7 +32,6 @@ function extractProxyKey(req: Request): string {
   return (
     process.env.ACCESS_KEY ||
     process.env.ACESS_KEY ||
-    process.env.PROXY_SECRET ||
     ""
   );
 }
@@ -58,7 +57,6 @@ app.get("/api/health", (_req: Request, res: Response) => {
   const serverKey =
     process.env.ACCESS_KEY ||
     process.env.ACESS_KEY ||
-    process.env.PROXY_SECRET ||
     "";
   res.json({
     status: "ok",
@@ -75,7 +73,6 @@ app.get("/api/config", (_req: Request, res: Response) => {
   const serverKey =
     process.env.ACCESS_KEY ||
     process.env.ACESS_KEY ||
-    process.env.PROXY_SECRET ||
     "";
   res.json({
     hasAccessKey: Boolean(serverKey),

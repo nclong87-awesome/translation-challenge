@@ -7,6 +7,8 @@ export interface RetryCountdownBannerProps {
   onRetry: () => void;
   onDismiss?: () => void;
   initialCountdownSeconds?: number;
+  retryCount?: number;
+  maxRetries?: number;
 }
 
 export const RetryCountdownBanner: React.FC<RetryCountdownBannerProps> = ({
@@ -15,24 +17,30 @@ export const RetryCountdownBanner: React.FC<RetryCountdownBannerProps> = ({
   onRetry,
   onDismiss,
   initialCountdownSeconds = 5,
+  retryCount = 0,
+  maxRetries = 3,
 }) => {
   const [secondsLeft, setSecondsLeft] = useState<number>(initialCountdownSeconds);
-  const [isCancelled, setIsCancelled] = useState<boolean>(false);
+  const [isCancelled, setIsCancelled] = useState<boolean>(retryCount >= maxRetries);
 
   const onRetryRef = useRef(onRetry);
   useEffect(() => {
     onRetryRef.current = onRetry;
   }, [onRetry]);
 
-  // Reset countdown if a new error occurs or failedModel changes
+  // Reset countdown if a new error occurs or failedModel changes (unless max retries reached)
   useEffect(() => {
-    setSecondsLeft(initialCountdownSeconds);
-    setIsCancelled(false);
-  }, [errorMessage, failedModel, initialCountdownSeconds]);
+    if (retryCount >= maxRetries) {
+      setIsCancelled(true);
+    } else {
+      setSecondsLeft(initialCountdownSeconds);
+      setIsCancelled(false);
+    }
+  }, [errorMessage, failedModel, initialCountdownSeconds, retryCount, maxRetries]);
 
-  // Automated 1-second countdown ticker
+  // Automated 1-second countdown ticker (only if not cancelled and retryCount < maxRetries)
   useEffect(() => {
-    if (isCancelled) return;
+    if (isCancelled || retryCount >= maxRetries) return;
 
     const timer = setInterval(() => {
       setSecondsLeft((prev) => {
@@ -46,7 +54,7 @@ export const RetryCountdownBanner: React.FC<RetryCountdownBannerProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isCancelled]);
+  }, [isCancelled, retryCount, maxRetries]);
 
   const handleCancelCountdown = () => {
     setIsCancelled(true);
@@ -98,14 +106,18 @@ export const RetryCountdownBanner: React.FC<RetryCountdownBannerProps> = ({
 
             {/* Live Countdown or Manual Override State */}
             <div className="mt-3 flex items-center gap-3 flex-wrap">
-              {!isCancelled ? (
+              {retryCount >= maxRetries ? (
+                <div className="flex items-center gap-1.5 text-xs text-rose-800 dark:text-rose-200 font-semibold">
+                  <span>Đã đạt tối đa {maxRetries} lần thử lại tự động. Vui lòng thử lại thủ công hoặc đổi mô hình/provider.</span>
+                </div>
+              ) : !isCancelled ? (
                 <div className="flex items-center gap-2 text-xs font-semibold text-rose-900 dark:text-rose-200">
                   <span className="relative flex h-2 w-2 flex-shrink-0">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-600 dark:bg-rose-400" />
                   </span>
                   <span>
-                    Tự động thử lại bằng mô hình thay thế sau:{" "}
+                    Tự động thử lại (lần {retryCount + 1}/{maxRetries}) sau:{" "}
                     <span className="font-mono text-sm text-rose-600 dark:text-rose-300 font-bold">
                       {secondsLeft}s
                     </span>
@@ -120,15 +132,17 @@ export const RetryCountdownBanner: React.FC<RetryCountdownBannerProps> = ({
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  id="btn-retry-immediately"
-                  onClick={handleImmediateRetry}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-700 active:bg-rose-800 transition-colors"
-                >
-                  <RefreshCw className="h-3 w-3 animate-spin-reverse" />
-                  Thử lại ngay
-                </button>
+                {retryCount < maxRetries && (
+                  <button
+                    type="button"
+                    id="btn-retry-immediately"
+                    onClick={handleImmediateRetry}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-700 active:bg-rose-800 transition-colors"
+                  >
+                    <RefreshCw className="h-3 w-3 animate-spin-reverse" />
+                    Thử lại ngay
+                  </button>
+                )}
 
                 {!isCancelled ? (
                   <button

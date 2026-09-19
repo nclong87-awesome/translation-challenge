@@ -34,7 +34,6 @@ function getAuthHeaders(): Record<string, string> {
   };
   const key = getStoredAccessKey();
   if (key) {
-    headers["X-Proxy-Key"] = key;
     headers["x-access-key"] = key;
     headers["Authorization"] = `Bearer ${key}`;
   }

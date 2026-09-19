@@ -70,8 +70,10 @@ export function MobileTranslationChallenge({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [challengeError, setChallengeError] = useState<string | null>(null);
   const [challengeFailedModel, setChallengeFailedModel] = useState<string | undefined>(undefined);
+  const [challengeRetryCount, setChallengeRetryCount] = useState<number>(0);
   const [evalError, setEvalError] = useState<string | null>(null);
   const [evalFailedModel, setEvalFailedModel] = useState<string | undefined>(undefined);
+  const [evalRetryCount, setEvalRetryCount] = useState<number>(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const challengeAbortControllerRef = useRef<AbortController | null>(null);
@@ -134,6 +136,7 @@ export function MobileTranslationChallenge({
       setChallenge(data);
       setChallengeError(null);
       setChallengeFailedModel(undefined);
+      setChallengeRetryCount(0);
     } catch (err: any) {
       if (controller.signal.aborted || err.name === "AbortError") {
         return;
@@ -142,6 +145,7 @@ export function MobileTranslationChallenge({
       const msg = err?.message || "Không thể tải thử thách mới.";
       setChallengeError(msg);
       setChallengeFailedModel(err?.failedModel);
+      setChallengeRetryCount((prev) => prev + 1);
       showToast(msg);
     } finally {
       if (challengeAbortControllerRef.current === controller) {
@@ -184,6 +188,7 @@ export function MobileTranslationChallenge({
       setResult(res);
       setEvalError(null);
       setEvalFailedModel(undefined);
+      setEvalRetryCount(0);
 
       // Handle incomplete draft suggestion
       if (res.intent === "incomplete") {
@@ -235,6 +240,7 @@ export function MobileTranslationChallenge({
       const msg = err?.message || "Có lỗi khi chấm bài, vui lòng thử lại.";
       setEvalError(msg);
       setEvalFailedModel(err?.failedModel);
+      setEvalRetryCount((prev) => prev + 1);
       showToast(msg);
     } finally {
       if (evalAbortControllerRef.current === controller) {
@@ -462,10 +468,13 @@ export function MobileTranslationChallenge({
             <RetryCountdownBanner
               errorMessage={challengeError}
               failedModel={challengeFailedModel}
+              retryCount={challengeRetryCount}
+              maxRetries={3}
               onRetry={() => loadNewChallenge()}
               onDismiss={() => {
                 setChallengeError(null);
                 setChallengeFailedModel(undefined);
+                setChallengeRetryCount(0);
               }}
             />
             <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
@@ -860,10 +869,13 @@ export function MobileTranslationChallenge({
             <RetryCountdownBanner
               errorMessage={evalError}
               failedModel={evalFailedModel}
+              retryCount={evalRetryCount}
+              maxRetries={3}
               onRetry={() => handleSubmit()}
               onDismiss={() => {
                 setEvalError(null);
                 setEvalFailedModel(undefined);
+                setEvalRetryCount(0);
               }}
             />
           </div>

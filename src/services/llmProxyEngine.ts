@@ -983,7 +983,7 @@ export async function executeChatCompletionWithRotation(
   let action: string | undefined;
   let requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-  let maxRetries = 3; // Retry across up to 3 candidate models on failure before giving up
+  let maxRetries = 1; // Default to 1: surface errors immediately to show countdown banner instead of silently retrying internally
 
   if (typeof accessKeyOrOptions === "object" && accessKeyOrOptions !== null) {
     accessKey = accessKeyOrOptions.accessKey;
@@ -1004,7 +1004,6 @@ export async function executeChatCompletionWithRotation(
     accessKey =
       process.env.ACCESS_KEY ||
       process.env.ACESS_KEY ||
-      process.env.PROXY_SECRET ||
       undefined;
   }
 
