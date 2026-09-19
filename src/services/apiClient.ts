@@ -82,8 +82,8 @@ export async function generateChallenge(
     return mockGenerateChallenge(userCollection);
   }
 
-  // If user has not configured an Access Key, prompt with a clear error
-  if (!accessKey) {
+  // In purely static environment without server, accessKey in localStorage is mandatory
+  if (isStaticEnvironment() && !accessKey) {
     throw new Error(
       "Chưa cấu hình mã truy cập (Access Key). Vui lòng mở Cài đặt hoặc nhấn vào biểu tượng chìa khóa để nhập mã truy cập Cloudflare Worker."
     );
@@ -218,7 +218,7 @@ Respond strictly in valid JSON:
         preferred_provider: preferredProvider,
       },
       {
-        accessKey,
+        accessKey: accessKey || undefined,
         timeoutMs: 30000,
         abortSignal: options?.abortSignal,
         action: "generateChallenge",
@@ -356,7 +356,8 @@ export async function evaluateChallengeTurn(
     return mockProcessChallengeTurn(challenge, userMessage);
   }
 
-  if (!accessKey) {
+  // In purely static environment without server, accessKey in localStorage is mandatory
+  if (isStaticEnvironment() && !accessKey) {
     throw new Error("Chưa có mã truy cập (Access Key) để chấm câu qua Cloudflare LLM.");
   }
 
@@ -449,7 +450,7 @@ Respond strictly in valid JSON with fields: score, scoreLabel, incorporatedTarge
         preferred_provider: preferredProvider,
       },
       {
-        accessKey,
+        accessKey: accessKey || undefined,
         timeoutMs: 30000,
         abortSignal: options?.abortSignal,
         action: "evaluateChallenge",
@@ -569,7 +570,8 @@ export async function askAiTutor(
     return mockAskAiQuestion(challenge, userQuestion, userTranslation);
   }
 
-  if (!accessKey) {
+  // In purely static environment without server, accessKey in localStorage is mandatory
+  if (isStaticEnvironment() && !accessKey) {
     throw new Error("Chưa có mã truy cập (Access Key) để hỏi gia sư AI qua Cloudflare LLM.");
   }
 
@@ -654,7 +656,7 @@ Respond strictly in valid JSON with fields: 'answer' (string) and 'suggestedFoll
         preferred_provider: preferredProvider,
       },
       {
-        accessKey,
+        accessKey: accessKey || undefined,
         timeoutMs: 30000,
         abortSignal: options?.abortSignal,
         action: "askAiTutor",

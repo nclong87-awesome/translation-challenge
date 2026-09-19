@@ -14,12 +14,23 @@ import {
   isStoredSampleMode,
   setStoredSampleMode,
   clearStoredSampleMode,
+  initAccessKeyFromServer,
 } from "./services/accessKey";
 
 export default function App() {
   const [accessKey, setAccessKey] = useState<string | null>(() => getStoredAccessKey());
   const [isSampleMode, setIsSampleMode] = useState<boolean>(() => isStoredSampleMode());
   const [isEditingKey, setIsEditingKey] = useState(false);
+
+  React.useEffect(() => {
+    if (!accessKey && !isSampleMode) {
+      initAccessKeyFromServer().then((key) => {
+        if (key) {
+          setAccessKey(key);
+        }
+      });
+    }
+  }, [accessKey, isSampleMode]);
 
   const isAppUnlocked = Boolean(accessKey || isSampleMode);
 

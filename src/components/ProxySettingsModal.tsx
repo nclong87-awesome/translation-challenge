@@ -26,6 +26,15 @@ export const ProxySettingsModal: React.FC<ProxySettingsModalProps> = ({
     latencyMs?: number;
   } | null>(null);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      const stored = getStoredAccessKey();
+      if (stored) {
+        setAccessKey(stored);
+      }
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const currentProvider = CLOUDFLARE_LLM_PROVIDERS.find((p: LLMProviderConfig) => p.id === selectedProvider);
@@ -45,7 +54,10 @@ export const ProxySettingsModal: React.FC<ProxySettingsModalProps> = ({
       currentProvider?.workerUrl && !currentProvider.workerUrl.startsWith("/")
         ? currentProvider.workerUrl
         : "https://groq.nclong87.workers.dev/openai/v1";
-    const targetModel = currentProvider?.models[0] || "llama-3.3-70b-versatile";
+    const targetModel =
+      selectedProvider === "auto"
+        ? "openai/gpt-oss-120b"
+        : (currentProvider?.models[0] || "openai/gpt-oss-120b");
 
     try {
       const result = await testWorkerConnection({

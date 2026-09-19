@@ -19,7 +19,7 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Helper to extract Cloudflare Worker access key from incoming request headers
+// Helper to extract Cloudflare Worker access key from incoming request headers or server env
 function extractProxyKey(req: Request): string {
   const headerKey = req.headers["x-proxy-key"] || req.headers["x-access-key"];
   if (typeof headerKey === "string" && headerKey.trim()) {
@@ -29,7 +29,12 @@ function extractProxyKey(req: Request): string {
   if (typeof auth === "string" && auth.startsWith("Bearer ")) {
     return auth.slice(7).trim();
   }
-  return process.env.PROXY_SECRET || "";
+  return (
+    process.env.ACCESS_KEY ||
+    process.env.ACESS_KEY ||
+    process.env.PROXY_SECRET ||
+    ""
+  );
 }
 
 // Lazy-initialized Gemini AI client
@@ -50,12 +55,31 @@ function getAI(): GoogleGenAI | null {
 
 // 1. Health check & status
 app.get("/api/health", (_req: Request, res: Response) => {
+  const serverKey =
+    process.env.ACCESS_KEY ||
+    process.env.ACESS_KEY ||
+    process.env.PROXY_SECRET ||
+    "";
   res.json({
     status: "ok",
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
+    hasAccessKey: Boolean(serverKey),
+    accessKey: serverKey,
     model: "gemini-3.8-flash",
     edgeProxy: "Cloudflare LLM Worker Gateway",
     providers: ["groq", "openrouter", "gemini", "9flare", "ollama", "cloudflare"]
+  });
+});
+
+app.get("/api/config", (_req: Request, res: Response) => {
+  const serverKey =
+    process.env.ACCESS_KEY ||
+    process.env.ACESS_KEY ||
+    process.env.PROXY_SECRET ||
+    "";
+  res.json({
+    hasAccessKey: Boolean(serverKey),
+    accessKey: serverKey,
   });
 });
 
@@ -149,7 +173,20 @@ app.post("/v1/chat/completions", async (req: Request, res: Response) => {
 // Diagnostic test endpoint for Cloudflare Worker microservices
 app.post("/api/test-llm", async (req: Request, res: Response) => {
   const proxyKey = extractProxyKey(req);
-  const { provider = "groq", model = "llama-3.3-70b-versatile" } = req.body;
+  let { provider = "groq", model } = req.body;
+  
+  if (!model || model === "llama-3.3-70b-versatile" || model === "auto-routing") {
+    if (provider === "groq" || provider === "auto") {
+      model = "openai/gpt-oss-120b";
+    } else if (provider === "gemini") {
+      model = "gemini-3.6-flash";
+    } else if (provider === "9flare") {
+      model = "pro/gpt-5.6-luna";
+    } else if (provider === "ollama") {
+      model = "gpt-oss:20b";
+    }
+  }
+
   const startTime = Date.now();
 
   try {

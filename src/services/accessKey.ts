@@ -1,6 +1,38 @@
 export const ACCESS_KEY_STORAGE_KEY = "app_access_key";
 export const SAMPLE_MODE_STORAGE_KEY = "app_sample_mode";
 
+let serverConfiguredKey: string | null = null;
+
+export function setServerConfiguredKey(key: string | null): void {
+  serverConfiguredKey = key ? key.trim() : null;
+}
+
+export function getServerConfiguredKey(): string | null {
+  return serverConfiguredKey;
+}
+
+export async function initAccessKeyFromServer(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const res = await fetch("/api/health");
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.accessKey) {
+        setServerConfiguredKey(data.accessKey);
+        // If localStorage does not have a key, sync server key to localStorage
+        const local = getStoredAccessKey();
+        if (!local) {
+          setStoredAccessKey(data.accessKey);
+        }
+        return data.accessKey;
+      }
+    }
+  } catch (err) {
+    console.debug("Could not initialize access key from server:", err);
+  }
+  return null;
+}
+
 export function getStoredAccessKey(): string | null {
   try {
     const key = localStorage.getItem(ACCESS_KEY_STORAGE_KEY);
@@ -10,7 +42,7 @@ export function getStoredAccessKey(): string | null {
   } catch (err) {
     console.error("Failed to read access key from localStorage:", err);
   }
-  return null;
+  return serverConfiguredKey;
 }
 
 export function setStoredAccessKey(key: string): void {

@@ -30,19 +30,8 @@ export const PROVIDER_REGISTRY: ProviderDefinition[] = [
       "openai/gpt-oss-120b",
       "openai/gpt-oss-20b",
       "openai/gpt-oss-safeguard-20b",
-      "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant"
-    ]
-  },
-  {
-    id: "openrouter",
-    name: "OpenRouter",
-    workerUrl: "https://openrouter.nclong87.workers.dev/api/v1",
-    models: [
-      "google/gemini-2.5-flash",
-      "google/gemini-2.0-flash",
-      "cohere/command-r-plus",
-      "meta-llama/llama-3.3-70b-instruct"
+      "groq/compound",
+      "qwen/qwen3.8-27b"
     ]
   },
   {
@@ -50,10 +39,8 @@ export const PROVIDER_REGISTRY: ProviderDefinition[] = [
     name: "Google Gemini",
     workerUrl: "https://gemini.nclong87.workers.dev/v1beta",
     models: [
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro"
+      "gemini-3.6-flash",
+      "gemini-3.8-flash"
     ]
   },
   {
@@ -73,6 +60,16 @@ export const PROVIDER_REGISTRY: ProviderDefinition[] = [
       "gpt-oss:20b",
       "gemma4:31b",
       "nemotron-3-nano:30b-cloud"
+    ]
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    workerUrl: "https://openrouter.nclong87.workers.dev/api/v1",
+    models: [
+      "meta-llama/llama-3.3-70b-instruct",
+      "google/gemini-2.0-flash",
+      "cohere/command-r-plus"
     ]
   },
   {
@@ -986,7 +983,7 @@ export async function executeChatCompletionWithRotation(
   let action: string | undefined;
   let requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-  let maxRetries = 1; // Default to 1: surface errors immediately to show countdown banner instead of silently retrying 4 times
+  let maxRetries = 3; // Retry across up to 3 candidate models on failure before giving up
 
   if (typeof accessKeyOrOptions === "object" && accessKeyOrOptions !== null) {
     accessKey = accessKeyOrOptions.accessKey;
@@ -1001,6 +998,14 @@ export async function executeChatCompletionWithRotation(
     }
   } else {
     accessKey = accessKeyOrOptions;
+  }
+
+  if (!accessKey && typeof process !== "undefined" && process.env) {
+    accessKey =
+      process.env.ACCESS_KEY ||
+      process.env.ACESS_KEY ||
+      process.env.PROXY_SECRET ||
+      undefined;
   }
 
   const excludedKeys = new Set<string>();

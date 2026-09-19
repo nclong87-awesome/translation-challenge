@@ -14,7 +14,7 @@ export const PROVIDER_OPTIONS: LLMProviderConfig[] = [
     workerUrl: "https://groq.nclong87.workers.dev/openai/v1",
     badge: "Multi-Tier Rotation",
     description: "Tự động phân tầng hiệu năng (Tier 1 <15s, Tier 2, Tier 4), probing mẫu đơn, khám phá ε-Greedy, và tự động chuyển đổi khi lỗi.",
-    models: ["auto-routing"]
+    models: ["openai/gpt-oss-120b"]
   },
   {
     id: "groq",
@@ -23,11 +23,11 @@ export const PROVIDER_OPTIONS: LLMProviderConfig[] = [
     badge: "Ultra Fast LPU",
     description: "Cloudflare Worker microservice proxy cho Groq LPU với tốc độ xử lý tức thì.",
     models: [
-      "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
       "openai/gpt-oss-120b",
       "openai/gpt-oss-20b",
-      "openai/gpt-oss-safeguard-20b"
+      "openai/gpt-oss-safeguard-20b",
+      "groq/compound",
+      "qwen/qwen3.8-27b"
     ]
   },
   {
@@ -37,10 +37,9 @@ export const PROVIDER_OPTIONS: LLMProviderConfig[] = [
     badge: "Multi-Model Hub",
     description: "Cloudflare Worker microservice proxy cho OpenRouter với hơn 100+ mô hình hàng đầu.",
     models: [
-      "google/gemini-2.5-flash",
+      "meta-llama/llama-3.3-70b-instruct",
       "google/gemini-2.0-flash",
-      "cohere/command-r-plus",
-      "meta-llama/llama-3.3-70b-instruct"
+      "cohere/command-r-plus"
     ]
   },
   {
@@ -50,10 +49,8 @@ export const PROVIDER_OPTIONS: LLMProviderConfig[] = [
     badge: "Native v1beta",
     description: "Cloudflare Worker microservice proxy cho Gemini native REST với khả năng hiểu sâu và ngữ cảnh phong phú.",
     models: [
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro"
+      "gemini-3.6-flash",
+      "gemini-3.8-flash"
     ]
   },
   {

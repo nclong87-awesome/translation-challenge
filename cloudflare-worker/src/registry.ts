@@ -16,19 +16,8 @@ export const PROVIDER_REGISTRY: ProviderDefinition[] = [
       'openai/gpt-oss-120b',
       'openai/gpt-oss-20b',
       'openai/gpt-oss-safeguard-20b',
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant'
-    ]
-  },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    workerUrl: 'https://openrouter.nclong87.workers.dev/api/v1',
-    models: [
-      'google/gemini-2.5-flash',
-      'google/gemini-2.0-flash',
-      'cohere/command-r-plus',
-      'meta-llama/llama-3.3-70b-instruct'
+      'groq/compound',
+      'qwen/qwen3.8-27b'
     ]
   },
   {
@@ -36,10 +25,8 @@ export const PROVIDER_REGISTRY: ProviderDefinition[] = [
     name: 'Google Gemini',
     workerUrl: 'https://gemini.nclong87.workers.dev/v1beta',
     models: [
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro'
+      'gemini-3.6-flash',
+      'gemini-3.8-flash'
     ]
   },
   {
@@ -59,6 +46,16 @@ export const PROVIDER_REGISTRY: ProviderDefinition[] = [
       'gpt-oss:20b',
       'gemma4:31b',
       'nemotron-3-nano:30b-cloud'
+    ]
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    workerUrl: 'https://openrouter.nclong87.workers.dev/api/v1',
+    models: [
+      'meta-llama/llama-3.3-70b-instruct',
+      'google/gemini-2.0-flash',
+      'cohere/command-r-plus'
     ]
   },
   {
