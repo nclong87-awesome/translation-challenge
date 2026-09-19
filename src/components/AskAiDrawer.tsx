@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { X, Send, Bot, Sparkles, Volume2 } from "lucide-react";
 import { ChallengeData } from "../types";
 import { askAiTutor } from "../services/apiClient";
+import { EstimatedResponseProgress } from "./EstimatedResponseProgress";
+import { RetryCountdownBanner } from "./RetryCountdownBanner";
 
 interface AskAiDrawerProps {
   isOpen: boolean;
@@ -29,6 +31,10 @@ export function AskAiDrawer({
   const [inputQuestion, setInputQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSpoiledTranslation, setShowSpoiledTranslation] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastQuery, setLastQuery] = useState<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const [messages, setMessages] = useState<Message[]>([
     {
       sender: "ai",
@@ -54,6 +60,7 @@ export function AskAiDrawer({
   // Reset messages and state when challenge or reveal state changes
   React.useEffect(() => {
     setShowSpoiledTranslation(false);
+    setErrorMessage(null);
     setMessages([
       {
         sender: "ai",
@@ -79,6 +86,14 @@ export function AskAiDrawer({
 
   if (!isOpen) return null;
 
+  const handleAbort = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort("User cancelled ask-ai request");
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+  };
+
   const handleSend = async (queryText?: string) => {
     const textToSend = queryText || inputQuestion;
     if (!textToSend.trim() || loading) return;
@@ -87,9 +102,17 @@ export function AskAiDrawer({
     setMessages((prev) => [...prev, userMsg]);
     setInputQuestion("");
     setLoading(true);
+    setErrorMessage(null);
+    setLastQuery(textToSend);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      const res = await askAiTutor(challenge, textToSend, userTranslation);
+      const res = await askAiTutor(challenge, textToSend, userTranslation, {
+        abortSignal: controller.signal,
+        action: "Gia sư AI phản hồi",
+      });
       setMessages((prev) => [
         ...prev,
         {
@@ -98,16 +121,15 @@ export function AskAiDrawer({
           suggestedFollowUps: res.suggestedFollowUps,
         },
       ]);
+      setErrorMessage(null);
     } catch (err: any) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: "ai",
-          text: `⚠️ **Lỗi kết nối gia sư AI**: ${err?.message || "Không thể kết nối với gia sư AI"}. Vui lòng kiểm tra lại Access Key hoặc kết nối mạng.`,
-        },
-      ]);
+      if (controller.signal.aborted || err.name === "AbortError") {
+        return;
+      }
+      setErrorMessage(err?.message || "Không thể kết nối với gia sư AI");
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -219,10 +241,24 @@ export function AskAiDrawer({
             </div>
           ))}
 
+          {/* Real-time Estimated Progress Indicator during loading */}
           {loading && (
-            <div className="flex items-center gap-2 text-xs text-stone-500 bg-white border border-stone-200 rounded-2xl px-3 py-2 w-fit">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
-              <span>Gia sư AI đang suy nghĩ...</span>
+            <div className="w-full my-2">
+              <EstimatedResponseProgress
+                actionLabel="Gia sư AI đang phân tích & trả lời"
+                onAbort={handleAbort}
+              />
+            </div>
+          )}
+
+          {/* Tier 3 Retry Countdown Banner on failure */}
+          {errorMessage && (
+            <div className="w-full my-2">
+              <RetryCountdownBanner
+                errorMessage={errorMessage}
+                onRetry={() => handleSend(lastQuery)}
+                onDismiss={() => setErrorMessage(null)}
+              />
             </div>
           )}
         </div>

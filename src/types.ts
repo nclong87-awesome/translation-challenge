@@ -39,6 +39,7 @@ export interface ChallengeData {
   createdAt: string;
   provider?: string;
   model?: string;
+  tier?: number;
   responseTimeMs?: number;
 }
 
@@ -95,6 +96,7 @@ export interface ChallengeTurnResult {
   evaluation?: ChallengeEvaluation;
   provider?: string;
   model?: string;
+  tier?: number;
   responseTimeMs?: number;
 }
 

@@ -38,6 +38,8 @@ import { VocabCollectionModal } from "./VocabCollectionModal";
 import { ProxySettingsModal } from "./ProxySettingsModal";
 import { ProxyDashboardModal } from "./ProxyDashboardModal";
 import { ApiAuditLogModal } from "./ApiAuditLogModal";
+import { EstimatedResponseProgress } from "./EstimatedResponseProgress";
+import { RetryCountdownBanner } from "./RetryCountdownBanner";
 
 interface MobileTranslationChallengeProps {
   accessKey?: string | null;
@@ -67,8 +69,11 @@ export function MobileTranslationChallenge({
   const [isAuditLogsOpen, setIsAuditLogsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [challengeError, setChallengeError] = useState<string | null>(null);
+  const [evalError, setEvalError] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const challengeAbortControllerRef = useRef<AbortController | null>(null);
+  const evalAbortControllerRef = useRef<AbortController | null>(null);
 
   // Sync collection to IndexedDB
   useEffect(() => {
@@ -107,36 +112,71 @@ export function MobileTranslationChallenge({
   };
 
   const loadNewChallenge = async (currentCollection = collection) => {
+    if (challengeAbortControllerRef.current) {
+      challengeAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    challengeAbortControllerRef.current = controller;
+
     setLoading(true);
     setChallengeError(null);
     setResult(null);
     setUserTranslation("");
     setShowClues(false);
     try {
-      const data = await generateChallenge(currentCollection);
+      const data = await generateChallenge(currentCollection, {
+        abortSignal: controller.signal,
+        action: "Tạo thử thách dịch thuật",
+      });
       setChallenge(data);
       setChallengeError(null);
     } catch (err: any) {
+      if (controller.signal.aborted || err.name === "AbortError") {
+        return;
+      }
       console.error("Failed to load challenge", err);
       const msg = err?.message || "Không thể tải thử thách mới.";
       setChallengeError(msg);
       showToast(msg);
     } finally {
-      setLoading(false);
+      if (challengeAbortControllerRef.current === controller) {
+        setLoading(false);
+        challengeAbortControllerRef.current = null;
+      }
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 100);
     }
   };
 
+  const handleAbortChallengeGeneration = () => {
+    if (challengeAbortControllerRef.current) {
+      challengeAbortControllerRef.current.abort("User cancelled generation");
+      challengeAbortControllerRef.current = null;
+    }
+    setLoading(false);
+  };
+
   const handleSubmit = async (overrideText?: string) => {
     if (!challenge || submitting) return;
     const textToSend = overrideText !== undefined ? overrideText : userTranslation;
+
+    if (evalAbortControllerRef.current) {
+      evalAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    evalAbortControllerRef.current = controller;
+
     setSubmitting(true);
+    setEvalError(null);
 
     try {
-      const res = await evaluateChallengeTurn(challenge, textToSend);
+      const res = await evaluateChallengeTurn(challenge, textToSend, {
+        abortSignal: controller.signal,
+        action: "Chấm câu & phân tích dịch thuật",
+      });
       setResult(res);
+      setEvalError(null);
 
       // Handle incomplete draft suggestion
       if (res.intent === "incomplete") {
@@ -181,11 +221,27 @@ export function MobileTranslationChallenge({
         });
       }
     } catch (err: any) {
+      if (controller.signal.aborted || err.name === "AbortError") {
+        return;
+      }
       console.error("Evaluation error", err);
-      showToast(err?.message || "Có lỗi khi chấm bài, vui lòng thử lại.");
+      const msg = err?.message || "Có lỗi khi chấm bài, vui lòng thử lại.";
+      setEvalError(msg);
+      showToast(msg);
     } finally {
-      setSubmitting(false);
+      if (evalAbortControllerRef.current === controller) {
+        setSubmitting(false);
+        evalAbortControllerRef.current = null;
+      }
     }
+  };
+
+  const handleAbortEvaluation = () => {
+    if (evalAbortControllerRef.current) {
+      evalAbortControllerRef.current.abort("User cancelled evaluation");
+      evalAbortControllerRef.current = null;
+    }
+    setSubmitting(false);
   };
 
   const playAudio = (text: string, lang = "en-US") => {
@@ -380,44 +436,27 @@ export function MobileTranslationChallenge({
       {/* Main Content Area */}
       <div className="flex-1 p-3.5 sm:p-4 flex flex-col gap-3.5 overflow-y-auto">
         {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-stone-600 gap-3 min-h-[320px]">
-            <div className="w-9 h-9 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <div>
-              <p className="text-sm font-bold text-stone-900">
-                Đang tạo thử thách dịch thuật...
-              </p>
-              <p className="text-xs text-stone-500 mt-0.5">
-                {eligibleCount > 0
-                  ? "Đang chọn từ trong bộ sưu tập cá nhân (>24h)..."
-                  : "Đang chọn câu hội thoại thường ngày tự nhiên..."}
-              </p>
+          <div className="flex-1 flex flex-col items-center justify-center p-4 text-center text-stone-600 gap-4 min-h-[320px]">
+            <div className="w-full max-w-md">
+              <EstimatedResponseProgress
+                actionLabel="Đang tạo thử thách dịch thuật"
+                onAbort={handleAbortChallengeGeneration}
+              />
             </div>
+            <p className="text-xs text-stone-500">
+              {eligibleCount > 0
+                ? "Đang chọn từ trong bộ sưu tập cá nhân (>24h)..."
+                : "Đang chọn câu hội thoại thường ngày tự nhiên..."}
+            </p>
           </div>
         ) : challengeError ? (
-          <div className="bg-white rounded-3xl p-6 border border-red-200 shadow-sm flex flex-col items-center text-center gap-4 my-auto">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 border border-red-200 flex items-center justify-center">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <div className="space-y-1.5 max-w-sm">
-              <h3 className="text-base font-bold text-stone-900">
-                Không thể tải thử thách từ Cloudflare LLM
-              </h3>
-              <div className="text-xs text-red-600 font-mono bg-red-50 p-3 rounded-xl border border-red-100 break-words text-left">
-                {challengeError}
-              </div>
-              <p className="text-[11px] text-stone-500 pt-1">
-                Vui lòng kiểm tra mã Access Key của Cloudflare Worker hoặc cấu hình proxy.
-              </p>
-            </div>
+          <div className="w-full max-w-md mx-auto my-auto space-y-3">
+            <RetryCountdownBanner
+              errorMessage={challengeError}
+              onRetry={() => loadNewChallenge()}
+              onDismiss={() => setChallengeError(null)}
+            />
             <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => loadNewChallenge()}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition active:scale-95 flex items-center gap-1.5 shadow-xs"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Thử lại
-              </button>
               {onChangeAccessKey && (
                 <button
                   type="button"
@@ -795,6 +834,25 @@ export function MobileTranslationChallenge({
 
       {/* Bottom Sticky Action Bar (Thumb-Level Mobile Ergonomics) */}
       <footer className="sticky bottom-0 z-20 bg-white/95 backdrop-blur-md p-3.5 sm:p-4 border-t border-stone-200/80 flex flex-col gap-3 shadow-lg">
+        {submitting && (
+          <div className="w-full">
+            <EstimatedResponseProgress
+              actionLabel="Đang chấm bài & phân tích dịch thuật"
+              onAbort={handleAbortEvaluation}
+            />
+          </div>
+        )}
+
+        {evalError && !submitting && (
+          <div className="w-full">
+            <RetryCountdownBanner
+              errorMessage={evalError}
+              onRetry={() => handleSubmit()}
+              onDismiss={() => setEvalError(null)}
+            />
+          </div>
+        )}
+
         {!result?.evaluation ? (
           <>
             {/* Input textarea */}

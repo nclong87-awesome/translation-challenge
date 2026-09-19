@@ -5,13 +5,14 @@ import {
   LockedModelInfo,
   PerformanceTier,
   ChatCompletionPayload,
-  Env
 } from "../../cloudflare-worker/src/types";
+import { llmEventBus, RequestStartEvent } from "./llmEventBus";
 
 export const ONE_HOUR_MS = 60 * 60 * 1000;
 export const ONE_DAY_MS = 24 * ONE_HOUR_MS;
 export const FIVE_DAYS_MS = 5 * ONE_DAY_MS;
 export const MAX_LOCK_MS = 4 * ONE_DAY_MS; // 96 hours
+export const DEFAULT_CONSERVATIVE_LATENCY_MS = 20000; // 20.0s empirical default fallback
 
 export interface ProviderDefinition {
   id: LLMProviderId;
@@ -104,11 +105,60 @@ export function getAllRegisteredCandidates(): ModelCandidate[] {
   return candidates;
 }
 
-// In-Memory metrics & locks store
-const metricsStore: Record<string, ModelMetricsRecord> = {};
+// Persistent Storage Keys
+const LOCAL_STORAGE_METRICS_KEY = "llm_metrics_v2";
+const LOCAL_STORAGE_LOCKS_KEY = "llm_locks_v2";
+
+// In-Memory store with persistent hydration
+let metricsStore: Record<string, ModelMetricsRecord> = {};
 let locksStore: Record<string, LockedModelInfo> = {};
 let rotationIndex = 0;
 let explorationCounter = 0;
+
+function isLocalStorageAvailable(): boolean {
+  try {
+    return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  } catch {
+    return false;
+  }
+}
+
+function hydrateFromLocalStorage(): void {
+  if (!isLocalStorageAvailable()) return;
+  try {
+    const rawMetrics = localStorage.getItem(LOCAL_STORAGE_METRICS_KEY);
+    if (rawMetrics) {
+      metricsStore = JSON.parse(rawMetrics);
+    }
+    const rawLocks = localStorage.getItem(LOCAL_STORAGE_LOCKS_KEY);
+    if (rawLocks) {
+      const parsedLocks = JSON.parse(rawLocks);
+      const now = Date.now();
+      const validLocks: Record<string, LockedModelInfo> = {};
+      for (const [k, v] of Object.entries(parsedLocks as Record<string, LockedModelInfo>)) {
+        if (v && v.expiresAt > now) {
+          validLocks[k] = v;
+        }
+      }
+      locksStore = validLocks;
+    }
+  } catch (err) {
+    console.warn("Could not hydrate LLM metrics/locks from localStorage:", err);
+  }
+}
+
+function persistToLocalStorage(): void {
+  if (!isLocalStorageAvailable()) return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_METRICS_KEY, JSON.stringify(metricsStore));
+    localStorage.setItem(LOCAL_STORAGE_LOCKS_KEY, JSON.stringify(locksStore));
+  } catch (err) {
+    console.warn("Could not persist LLM metrics/locks to localStorage:", err);
+  }
+}
+
+// Initial hydration
+hydrateFromLocalStorage();
 
 export function getConsecutiveFailures(metric?: ModelMetricsRecord, isCurrentlyFailing = false): number {
   if (!metric) return isCurrentlyFailing ? 1 : 0;
@@ -134,6 +184,14 @@ export function getConsecutiveFailures(metric?: ModelMetricsRecord, isCurrentlyF
   return Math.max(isCurrentlyFailing ? 1 : 0, consecutive);
 }
 
+/**
+ * Calculates dynamic adaptive lock duration based on:
+ * Factor 1: Consecutive failure streak base duration (1h -> 96h)
+ * Factor 2: Accumulated failure history with 5-day recency power decay (1.4 exponent)
+ * Factor 3: High latency multiplier (>15s penalty)
+ * Factor 4: Historical reliability multiplier (0.5x, 2.0x, 1.5x)
+ * Factor 5: Boundary clamping between 1 hour and 4 days (96 hours)
+ */
 export function calculateLockDuration(metric?: ModelMetricsRecord, errorReason?: string): number {
   if (!metric) return ONE_HOUR_MS;
 
@@ -203,6 +261,7 @@ export function isModelLocked(provider: string, model: string): boolean {
   if (!lock) return false;
   if (lock.expiresAt <= Date.now()) {
     delete locksStore[key];
+    persistToLocalStorage();
     return false;
   }
   return true;
@@ -225,10 +284,32 @@ export function getAllLocks(): Record<string, LockedModelInfo> {
 
 export function unlockModel(provider: string, model: string): void {
   delete locksStore[`${provider}:${model}`];
+  persistToLocalStorage();
 }
 
 export function clearAllLocks(): void {
   locksStore = {};
+  persistToLocalStorage();
+}
+
+/**
+ * Expected Duration Hierarchy ($T_expected):
+ * 1. Rolling historical average (from verified successful requests: K >= 50)
+ * 2. Most recent single latency benchmark
+ * 3. Default conservative fallback (20,000 ms = 20.0s)
+ */
+export function getExpectedResponseTimeMs(provider: string, model: string): number {
+  const key = `${provider}:${model}`;
+  const metric = metricsStore[key];
+  if (metric) {
+    if (typeof metric.avgResponseTimeMs === "number" && metric.avgResponseTimeMs > 0) {
+      return metric.avgResponseTimeMs;
+    }
+    if (typeof metric.lastResponseTimeMs === "number" && metric.lastResponseTimeMs > 0) {
+      return metric.lastResponseTimeMs;
+    }
+  }
+  return DEFAULT_CONSERVATIVE_LATENCY_MS;
 }
 
 export function recordSuccess(provider: string, model: string, durationMs: number): void {
@@ -263,6 +344,8 @@ export function recordSuccess(provider: string, model: string, durationMs: numbe
     totalSuccesses: prevSuccesses + 1,
     failureLogs: existing?.failureLogs || []
   };
+
+  persistToLocalStorage();
 }
 
 export function recordFailure(provider: string, model: string, reason: string): void {
@@ -304,6 +387,8 @@ export function recordFailure(provider: string, model: string, reason: string): 
     expiresAt: now + lockMs,
     reason
   };
+
+  persistToLocalStorage();
 }
 
 export function getPerformanceTier(
@@ -322,14 +407,19 @@ export function getPerformanceTier(
   return { tier: 4, isUntested: false };
 }
 
-export function getNextCandidate(
+/**
+ * Non-advancing candidate lookahead:
+ * Peeks at the upcoming candidate without incrementing the global round-robin rotation index or exploration counter.
+ */
+export function peekNextCandidate(
   preferredProvider?: string,
   preferredModels?: string[],
   excludedKeys?: Set<string>
-): { candidate: ModelCandidate; tier: PerformanceTier; isUntested: boolean; isExploratory: boolean } {
+): { candidate: ModelCandidate; tier: PerformanceTier; isUntested: boolean; isExploratory: boolean; isAutoRouting: boolean } {
   let allCandidates = getAllRegisteredCandidates();
+  const isAuto = !preferredProvider || preferredProvider === "auto";
 
-  if (preferredProvider && preferredProvider !== "auto") {
+  if (!isAuto) {
     allCandidates = allCandidates.filter(c => c.provider === preferredProvider);
   }
 
@@ -347,6 +437,7 @@ export function getNextCandidate(
     }
   }
 
+  // Anti-Deadlock Check
   if (available.length === 0) {
     const fallbackList = allCandidates.filter(c => !excludedKeys || !excludedKeys.has(`${c.provider}:${c.model}`));
     const finalCand = fallbackList.length > 0 ? fallbackList[0] : allCandidates[0];
@@ -354,8 +445,129 @@ export function getNextCandidate(
       candidate: finalCand,
       tier: 1,
       isUntested: false,
-      isExploratory: false
+      isExploratory: false,
+      isAutoRouting: isAuto
     };
+  }
+
+  const tier1Probes: ModelCandidate[] = [];
+  const tier1Tested: { cand: ModelCandidate; time: number }[] = [];
+  const tier2: { cand: ModelCandidate; time: number }[] = [];
+  const tier4: { cand: ModelCandidate; time: number }[] = [];
+
+  for (const cand of available) {
+    const key = `${cand.provider}:${cand.model}`;
+    const m = metricsStore[key];
+    const time = m?.lastResponseTimeMs ?? null;
+    const successes = m?.totalSuccesses || 0;
+    const { tier, isUntested } = getPerformanceTier(time, successes);
+
+    if (isUntested) {
+      tier1Probes.push(cand);
+    } else if (tier === 1) {
+      tier1Tested.push({ cand, time: time! });
+    } else if (tier === 2) {
+      tier2.push({ cand, time: time! });
+    } else {
+      tier4.push({ cand, time: time! });
+    }
+  }
+
+  // Simulated exploration check (peek only)
+  const isExplorationTurn = (explorationCounter + 1) % 12 === 0;
+  if (isExplorationTurn && (tier2.length > 0 || tier4.length > 0)) {
+    const explorePool = [...tier2.map(t => t.cand), ...tier4.map(t => t.cand)];
+    const chosen = explorePool[rotationIndex % explorePool.length];
+    return {
+      candidate: chosen,
+      tier: tier2.some(t => t.cand === chosen) ? 2 : 4,
+      isUntested: false,
+      isExploratory: true,
+      isAutoRouting: isAuto
+    };
+  }
+
+  if (tier1Probes.length > 0) {
+    const chosen = tier1Probes[rotationIndex % tier1Probes.length];
+    return {
+      candidate: chosen,
+      tier: 1,
+      isUntested: true,
+      isExploratory: false,
+      isAutoRouting: isAuto
+    };
+  }
+
+  if (tier1Tested.length > 0) {
+    const chosen = tier1Tested[rotationIndex % tier1Tested.length].cand;
+    return {
+      candidate: chosen,
+      tier: 1,
+      isUntested: false,
+      isExploratory: false,
+      isAutoRouting: isAuto
+    };
+  }
+
+  if (tier2.length > 0) {
+    const chosen = tier2[rotationIndex % tier2.length].cand;
+    return {
+      candidate: chosen,
+      tier: 2,
+      isUntested: false,
+      isExploratory: false,
+      isAutoRouting: isAuto
+    };
+  }
+
+  const chosen = tier4[rotationIndex % tier4.length].cand;
+  return {
+    candidate: chosen,
+    tier: 4,
+    isUntested: false,
+    isExploratory: false,
+    isAutoRouting: isAuto
+  };
+}
+
+/**
+ * Resolves candidate and increments rotation index.
+ * Implements Anti-Deadlock Lockout Reset if all candidates are locked.
+ */
+export function getNextCandidate(
+  preferredProvider?: string,
+  preferredModels?: string[],
+  excludedKeys?: Set<string>
+): { candidate: ModelCandidate; tier: PerformanceTier; isUntested: boolean; isExploratory: boolean; isAutoRouting: boolean } {
+  let allCandidates = getAllRegisteredCandidates();
+  const isAuto = !preferredProvider || preferredProvider === "auto";
+
+  if (!isAuto) {
+    allCandidates = allCandidates.filter(c => c.provider === preferredProvider);
+  }
+
+  let available = allCandidates.filter(cand => {
+    const key = `${cand.provider}:${cand.model}`;
+    const locked = isModelLocked(cand.provider, cand.model);
+    const excluded = excludedKeys ? excludedKeys.has(key) : false;
+    return !locked && !excluded;
+  });
+
+  if (preferredModels && preferredModels.length > 0) {
+    const prefAvailable = available.filter(c => preferredModels.includes(c.model));
+    if (prefAvailable.length > 0) {
+      available = prefAvailable;
+    }
+  }
+
+  // Anti-Deadlock Lockout Reset: If widespread outages locked all candidates, purge all active locks
+  if (available.length === 0) {
+    console.warn("[CircuitBreaker] Anti-deadlock triggered: all candidates were locked. Purging all active locks to restore system availability.");
+    clearAllLocks();
+    available = allCandidates.filter(c => !excludedKeys || !excludedKeys.has(`${c.provider}:${c.model}`));
+    if (available.length === 0) {
+      available = allCandidates;
+    }
   }
 
   const tier1Probes: ModelCandidate[] = [];
@@ -392,7 +604,8 @@ export function getNextCandidate(
       candidate: chosen,
       tier: tier2.some(t => t.cand === chosen) ? 2 : 4,
       isUntested: false,
-      isExploratory: true
+      isExploratory: true,
+      isAutoRouting: isAuto
     };
   }
 
@@ -404,7 +617,8 @@ export function getNextCandidate(
       candidate: chosen,
       tier: 1,
       isUntested: true,
-      isExploratory: false
+      isExploratory: false,
+      isAutoRouting: isAuto
     };
   }
 
@@ -416,7 +630,8 @@ export function getNextCandidate(
       candidate: chosen,
       tier: 1,
       isUntested: false,
-      isExploratory: false
+      isExploratory: false,
+      isAutoRouting: isAuto
     };
   }
 
@@ -428,7 +643,8 @@ export function getNextCandidate(
       candidate: chosen,
       tier: 2,
       isUntested: false,
-      isExploratory: false
+      isExploratory: false,
+      isAutoRouting: isAuto
     };
   }
 
@@ -439,20 +655,97 @@ export function getNextCandidate(
     candidate: chosen,
     tier: 4,
     isUntested: false,
-    isExploratory: false
+    isExploratory: false,
+    isAutoRouting: isAuto
   };
 }
 
+// Error Classification
+export type ErrorCategory =
+  | "INVALID_KEY"
+  | "PERMISSION_DENIED"
+  | "LOCATION_UNSUPPORTED"
+  | "NOT_FOUND"
+  | "RATE_LIMIT"
+  | "SERVER_ERROR"
+  | "NETWORK_ERROR"
+  | "INVALID_RESPONSE";
+
+export function classifyHttpError(statusCode: number, errorText = ""): { category: ErrorCategory; retryable: boolean } {
+  const lower = errorText.toLowerCase();
+  if (statusCode === 401) {
+    return { category: "INVALID_KEY", retryable: false };
+  }
+  if (statusCode === 403) {
+    return { category: "PERMISSION_DENIED", retryable: false };
+  }
+  if (statusCode === 400) {
+    if (lower.includes("location") || lower.includes("country") || lower.includes("region") || lower.includes("unsupported")) {
+      return { category: "LOCATION_UNSUPPORTED", retryable: false };
+    }
+  }
+  if (statusCode === 404) {
+    return { category: "NOT_FOUND", retryable: false };
+  }
+  if (statusCode === 429) {
+    return { category: "RATE_LIMIT", retryable: true };
+  }
+  if ([500, 502, 503, 504].includes(statusCode)) {
+    return { category: "SERVER_ERROR", retryable: true };
+  }
+  if (statusCode === 422) {
+    return { category: "INVALID_RESPONSE", retryable: true };
+  }
+  return { category: "SERVER_ERROR", retryable: statusCode >= 500 };
+}
+
 /**
- * Dispatches request to the Cloudflare Worker microservice.
- * CRITICAL DIRECTIVE: Always pass the access key in the 'X-Proxy-Key' header on all requests
- * to Cloudflare Workers (*.workers.dev).
+ * Exponential backoff with random jitter formulation:
+ * t_delay = min(t_max, t_initial * 2^(attempt - 1)) + rand(0, jitter_max)
+ */
+export function calculateBackoffDelay(attempt: number, initialMs = 1000, maxMs = 4000, jitterMaxMs = 200): number {
+  const exponential = initialMs * Math.pow(2, attempt - 1);
+  const jitter = Math.random() * jitterMaxMs;
+  return Math.min(maxMs, exponential) + jitter;
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new DOMException("Aborted", "AbortError"));
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
+}
+
+function hasAdvancedParameters(payload: ChatCompletionPayload): boolean {
+  return Boolean(payload.response_format || (payload as any).reasoning_effort || (payload as any).thinking);
+}
+
+function sanitizeAdvancedParameters(payload: ChatCompletionPayload): ChatCompletionPayload {
+  const copy = { ...payload };
+  delete copy.response_format;
+  delete (copy as any).reasoning_effort;
+  delete (copy as any).thinking;
+  return copy;
+}
+
+/**
+ * Dispatches a single HTTP request to the candidate model with Tier 1 transport resilience:
+ * - Exponential backoff with jitter on 429 / 5xx
+ * - Protocol self-healing: parameter stripping on HTTP 400 / schema rejections
+ * - Full AbortSignal support
  */
 export async function executeUpstreamCall(
   candidate: ModelCandidate,
   payload: ChatCompletionPayload,
   timeoutMs: number,
-  accessKey?: string
+  accessKey?: string,
+  userAbortSignal?: AbortSignal
 ): Promise<Response> {
   const cleanWorkerUrl = candidate.workerUrl.replace(/\/+$/, "");
   const headers: Record<string, string> = {
@@ -470,127 +763,213 @@ export async function executeUpstreamCall(
     headers["X-Title"] = "Cloudflare LLM Edge Router";
   }
 
-  if (candidate.provider === "gemini") {
-    // Native Gemini REST v1beta
-    let url = `${cleanWorkerUrl}/models/${candidate.model}:generateContent`;
-    if (accessKey) {
-      headers["x-goog-api-key"] = accessKey;
-    }
+  const isGeminiNative = candidate.provider === "gemini";
+  let activePayload = { ...payload };
 
-    let systemInstructionText = "";
-    const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+  const maxTransportRetries = 1; // Tier 1 allows 1 retry with backoff before escalating to Tier 2
+  let transportAttempt = 0;
 
-    for (const m of payload.messages) {
-      if (m.role === "system") {
-        systemInstructionText += (systemInstructionText ? "\n" : "") + m.content;
-      } else {
-        contents.push({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }]
-        });
-      }
-    }
+  while (transportAttempt <= maxTransportRetries) {
+    transportAttempt++;
 
-    const geminiPayload: any = {
-      contents,
-      generationConfig: {
-        temperature: payload.temperature ?? 0.7,
-        maxOutputTokens: payload.max_tokens
-      }
-    };
-
-    if (systemInstructionText) {
-      geminiPayload.systemInstruction = {
-        parts: [{ text: systemInstructionText }]
-      };
-    }
-
-    if (payload.response_format?.type === "json_object") {
-      geminiPayload.generationConfig.responseMimeType = "application/json";
+    if (userAbortSignal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutTimer = setTimeout(() => controller.abort("Timeout"), timeoutMs);
+
+    const onUserAbort = () => controller.abort(userAbortSignal?.reason || "User aborted");
+    userAbortSignal?.addEventListener("abort", onUserAbort, { once: true });
 
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(geminiPayload),
-        signal: controller.signal
-      });
+      let response: Response;
 
-      if (!res.ok) return res;
-
-      const geminiData: any = await res.json();
-      const outputText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-      const openAiResponse = {
-        id: `chatcmpl-${Date.now()}`,
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: candidate.model,
-        choices: [
-          {
-            index: 0,
-            message: { role: "assistant", content: outputText },
-            finish_reason: "stop"
-          }
-        ],
-        usage: {
-          prompt_tokens: geminiData.usageMetadata?.promptTokenCount || 0,
-          completion_tokens: geminiData.usageMetadata?.candidatesTokenCount || 0,
-          total_tokens: geminiData.usageMetadata?.totalTokenCount || 0
+      if (isGeminiNative) {
+        const url = `${cleanWorkerUrl}/models/${candidate.model}:generateContent`;
+        if (accessKey) {
+          headers["x-goog-api-key"] = accessKey;
         }
-      };
 
-      return new Response(JSON.stringify(openAiResponse), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
+        let systemInstructionText = "";
+        const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+
+        for (const m of activePayload.messages) {
+          if (m.role === "system") {
+            systemInstructionText += (systemInstructionText ? "\n" : "") + m.content;
+          } else {
+            contents.push({
+              role: m.role === "assistant" ? "model" : "user",
+              parts: [{ text: m.content }]
+            });
+          }
+        }
+
+        const geminiPayload: any = {
+          contents,
+          generationConfig: {
+            temperature: activePayload.temperature ?? 0.7,
+            maxOutputTokens: activePayload.max_tokens
+          }
+        };
+
+        if (systemInstructionText) {
+          geminiPayload.systemInstruction = {
+            parts: [{ text: systemInstructionText }]
+          };
+        }
+
+        if (activePayload.response_format?.type === "json_object") {
+          geminiPayload.generationConfig.responseMimeType = "application/json";
+        }
+
+        response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(geminiPayload),
+          signal: controller.signal
+        });
+
+        // Protocol Self-Healing (Parameter Stripping)
+        if (!response.ok && response.status === 400 && hasAdvancedParameters(activePayload)) {
+          const errBody = await response.clone().text().catch(() => "");
+          if (errBody.includes("responseMimeType") || errBody.includes("schema") || response.status === 400) {
+            activePayload = sanitizeAdvancedParameters(activePayload);
+            delete geminiPayload.generationConfig.responseMimeType;
+            response = await fetch(url, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(geminiPayload),
+              signal: controller.signal
+            });
+          }
+        }
+
+        if (!response.ok) {
+          // Check retryability
+          const errBody = await response.clone().text().catch(() => "");
+          const { retryable } = classifyHttpError(response.status, errBody);
+          if (retryable && transportAttempt <= maxTransportRetries) {
+            const delayMs = calculateBackoffDelay(transportAttempt);
+            await delay(delayMs, userAbortSignal);
+            continue;
+          }
+          return response;
+        }
+
+        const geminiData: any = await response.json();
+        const outputText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+        const openAiResponse = {
+          id: `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: candidate.model,
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: outputText },
+              finish_reason: "stop"
+            }
+          ],
+          usage: {
+            prompt_tokens: geminiData.usageMetadata?.promptTokenCount || 0,
+            completion_tokens: geminiData.usageMetadata?.candidatesTokenCount || 0,
+            total_tokens: geminiData.usageMetadata?.totalTokenCount || 0
+          }
+        };
+
+        return new Response(JSON.stringify(openAiResponse), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+
+      } else {
+        // OpenAI-compatible Chat Completions
+        const url = cleanWorkerUrl.endsWith("/chat/completions")
+          ? cleanWorkerUrl
+          : `${cleanWorkerUrl}/chat/completions`;
+
+        const upstreamBody: any = {
+          model: candidate.model,
+          messages: activePayload.messages,
+          temperature: activePayload.temperature ?? 0.7,
+          max_tokens: activePayload.max_tokens,
+          stream: activePayload.stream ?? false,
+          response_format: activePayload.response_format
+        };
+
+        response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(upstreamBody),
+          signal: controller.signal
+        });
+
+        // Protocol Self-Healing (Parameter Stripping)
+        if (!response.ok && response.status === 400 && hasAdvancedParameters(activePayload)) {
+          const errBody = await response.clone().text().catch(() => "");
+          if (errBody.includes("response_format") || errBody.includes("schema") || response.status === 400) {
+            activePayload = sanitizeAdvancedParameters(activePayload);
+            delete upstreamBody.response_format;
+            response = await fetch(url, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(upstreamBody),
+              signal: controller.signal
+            });
+          }
+        }
+
+        if (!response.ok) {
+          const errBody = await response.clone().text().catch(() => "");
+          const { retryable } = classifyHttpError(response.status, errBody);
+          if (retryable && transportAttempt <= maxTransportRetries) {
+            const delayMs = calculateBackoffDelay(transportAttempt);
+            await delay(delayMs, userAbortSignal);
+            continue;
+          }
+          return response;
+        }
+
+        return response;
+      }
+    } catch (err: any) {
+      if (userAbortSignal?.aborted || err.name === "AbortError") {
+        throw err;
+      }
+      if (transportAttempt <= maxTransportRetries) {
+        const delayMs = calculateBackoffDelay(transportAttempt);
+        await delay(delayMs, userAbortSignal);
+        continue;
+      }
+      throw err;
     } finally {
-      clearTimeout(timer);
+      clearTimeout(timeoutTimer);
+      userAbortSignal?.removeEventListener("abort", onUserAbort);
     }
   }
 
-  // OpenAI-compatible Cloudflare Workers (Groq, OpenRouter, 9Flare, Ollama, Cloudflare Workers AI)
-  const url = cleanWorkerUrl.endsWith("/chat/completions")
-    ? cleanWorkerUrl
-    : `${cleanWorkerUrl}/chat/completions`;
+  throw new Error(`Transport-level request failed for ${candidate.provider}/${candidate.model}`);
+}
 
-  const upstreamBody = {
-    model: candidate.model,
-    messages: payload.messages,
-    temperature: payload.temperature ?? 0.7,
-    max_tokens: payload.max_tokens,
-    stream: payload.stream ?? false,
-    response_format: payload.response_format
-  };
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(upstreamBody),
-      signal: controller.signal
-    });
-    return res;
-  } finally {
-    clearTimeout(timer);
-  }
+export interface ChatCompletionOptions {
+  accessKey?: string;
+  timeoutMs?: number;
+  abortSignal?: AbortSignal;
+  action?: string;
+  requestId?: string;
 }
 
 /**
  * Executes a chat completion through the intelligent rotation & circuit-breaker engine
- * with up to 4 retry attempts across candidates.
+ * with up to 4 candidate retries across operational models, publishing lifecycle events
+ * to the pre-flight event bus.
  */
 export async function executeChatCompletionWithRotation(
   payload: ChatCompletionPayload,
-  accessKey?: string,
-  timeoutMs = 30000
+  accessKeyOrOptions?: string | ChatCompletionOptions,
+  timeoutMsInput = 30000
 ): Promise<{
   content: string;
   response: any;
@@ -600,12 +979,43 @@ export async function executeChatCompletionWithRotation(
   durationMs: number;
   attempts: number;
 }> {
+  let accessKey: string | undefined;
+  let timeoutMs = timeoutMsInput;
+  let abortSignal: AbortSignal | undefined;
+  let action: string | undefined;
+  let requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+  if (typeof accessKeyOrOptions === "object" && accessKeyOrOptions !== null) {
+    accessKey = accessKeyOrOptions.accessKey;
+    timeoutMs = accessKeyOrOptions.timeoutMs ?? timeoutMsInput;
+    abortSignal = accessKeyOrOptions.abortSignal;
+    action = accessKeyOrOptions.action;
+    if (accessKeyOrOptions.requestId) {
+      requestId = accessKeyOrOptions.requestId;
+    }
+  } else {
+    accessKey = accessKeyOrOptions;
+  }
+
   const excludedKeys = new Set<string>();
   const maxRetries = 4;
   let attempt = 0;
   let lastErrorReason = "Unknown error";
 
   while (attempt < maxRetries) {
+    if (abortSignal?.aborted) {
+      llmEventBus.emitEnd({
+        requestId,
+        provider: "user-cancelled",
+        model: "aborted",
+        durationMs: 0,
+        status: "aborted",
+        errorReason: "User cancelled request",
+        action
+      });
+      throw new DOMException("The user aborted a request.", "AbortError");
+    }
+
     attempt++;
     const routing = getNextCandidate(
       payload.preferred_provider,
@@ -616,15 +1026,36 @@ export async function executeChatCompletionWithRotation(
     const candidate = routing.candidate;
     const candidateKey = `${candidate.provider}:${candidate.model}`;
     const startTime = Date.now();
+    const expectedDurationMs = getExpectedResponseTimeMs(candidate.provider, candidate.model);
+
+    // Pre-flight Event Notification: Publish start event for active or newly switched candidate
+    llmEventBus.emitStart({
+      requestId,
+      provider: candidate.provider,
+      model: candidate.model,
+      timestamp: startTime,
+      expectedDurationMs,
+      isAutoRouting: routing.isAutoRouting,
+      action
+    });
 
     try {
-      const upstreamRes = await executeUpstreamCall(candidate, payload, timeoutMs, accessKey);
+      const upstreamRes = await executeUpstreamCall(candidate, payload, timeoutMs, accessKey, abortSignal);
       const durationMs = Date.now() - startTime;
 
       if (upstreamRes.ok) {
         recordSuccess(candidate.provider, candidate.model, durationMs);
         const data: any = await upstreamRes.json();
         const content = data.choices?.[0]?.message?.content || "";
+
+        llmEventBus.emitEnd({
+          requestId,
+          provider: candidate.provider,
+          model: candidate.model,
+          durationMs,
+          status: "success",
+          action
+        });
 
         return {
           content,
@@ -642,15 +1073,37 @@ export async function executeChatCompletionWithRotation(
       lastErrorReason = `HTTP ${errStatus}: ${errBody.slice(0, 150)}`;
       recordFailure(candidate.provider, candidate.model, lastErrorReason);
       excludedKeys.add(candidateKey);
+
     } catch (err: any) {
       const durationMs = Date.now() - startTime;
-      lastErrorReason = err.name === "AbortError"
-        ? `Timeout after ${Math.round(timeoutMs / 1000)}s`
-        : (err.message || "Network error");
+      if (abortSignal?.aborted || err.name === "AbortError") {
+        llmEventBus.emitEnd({
+          requestId,
+          provider: candidate.provider,
+          model: candidate.model,
+          durationMs,
+          status: "aborted",
+          errorReason: "User aborted",
+          action
+        });
+        throw err;
+      }
+
+      lastErrorReason = err.message || "Network error";
       recordFailure(candidate.provider, candidate.model, lastErrorReason);
       excludedKeys.add(candidateKey);
     }
   }
+
+  llmEventBus.emitEnd({
+    requestId,
+    provider: "all-candidates",
+    model: "failed",
+    durationMs: 0,
+    status: "error",
+    errorReason: lastErrorReason,
+    action
+  });
 
   throw new Error(`All available LLM candidate models failed (${attempt} attempts). Last error: ${lastErrorReason}`);
 }

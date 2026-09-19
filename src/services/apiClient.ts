@@ -11,9 +11,22 @@ import {
 } from "./mockChallengeService";
 import { getStoredAccessKey, isStoredSampleMode } from "./accessKey";
 import { logApiRequest } from "./requestHistoryService";
-import { executeChatCompletionWithRotation } from "./llmProxyEngine";
+import {
+  executeChatCompletionWithRotation,
+  peekNextCandidate,
+  getExpectedResponseTimeMs,
+} from "./llmProxyEngine";
 import { selectChallengeCandidates } from "./candidateSelector";
 import { LLMProviderId } from "../../cloudflare-worker/src/types";
+import { parseOrRepairJson } from "../utils/jsonRepair";
+
+export interface RequestCallOptions {
+  abortSignal?: AbortSignal;
+  requestId?: string;
+  action?: string;
+}
+
+export { peekNextCandidate, getExpectedResponseTimeMs };
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
@@ -54,8 +67,13 @@ function getPreferredProvider(): LLMProviderId | undefined {
 // 1. Generate Challenge
 // --------------------------------------------------------------------------
 export async function generateChallenge(
-  userCollection: UserVocabItem[] = []
+  userCollection: UserVocabItem[] = [],
+  options?: RequestCallOptions
 ): Promise<ChallengeData> {
+  if (options?.abortSignal?.aborted) {
+    throw new DOMException("The user aborted a request.", "AbortError");
+  }
+
   const accessKey = getStoredAccessKey();
   const sampleMode = isStoredSampleMode();
 
@@ -84,6 +102,7 @@ export async function generateChallenge(
           candidates: userCollection,
           isDailyConversationFallback: false,
         }),
+        signal: options?.abortSignal,
       });
 
       if (res.ok) {
@@ -104,7 +123,10 @@ export async function generateChallenge(
           return data;
         }
       }
-    } catch {
+    } catch (err: any) {
+      if (options?.abortSignal?.aborted || err.name === "AbortError") {
+        throw err;
+      }
       // Server endpoint unavailable (e.g. 404 or network); seamlessly proceed to direct Cloudflare Worker execution
     }
   }
@@ -190,20 +212,24 @@ Respond strictly in valid JSON:
         response_format: { type: "json_object" },
         preferred_provider: preferredProvider,
       },
-      accessKey,
-      30000
+      {
+        accessKey,
+        timeoutMs: 30000,
+        abortSignal: options?.abortSignal,
+        action: "generateChallenge",
+        requestId: options?.requestId,
+      }
     );
 
     let parsed: any = {};
     try {
-      parsed = JSON.parse(result.content);
-    } catch {
-      const match = result.content.match(/\{[\s\S]*\}/);
-      if (match) parsed = JSON.parse(match[0]);
+      parsed = parseOrRepairJson(result.content);
+    } catch (parseErr: any) {
+      throw new Error(`Phản hồi từ mô hình AI không đúng định dạng JSON: ${parseErr.message}`);
     }
 
     if (!parsed || !parsed.nativeSentence) {
-      throw new Error("Phản hồi từ mô hình AI không đúng định dạng dữ liệu.");
+      throw new Error("Phản hồi từ mô hình AI không đúng định dạng dữ liệu (thiếu nativeSentence).");
     }
 
     const durationMs = Date.now() - startTime;
@@ -234,23 +260,24 @@ Respond strictly in valid JSON:
 
     return challengeData;
   } catch (err: any) {
+    if (options?.abortSignal?.aborted || err.name === "AbortError") {
+      throw err;
+    }
     const durationMs = Date.now() - startTime;
     logApiRequest({
       provider: "cloudflare-worker",
       model: "auto-rotation",
       prompt: promptSummary,
+      systemInstruction,
       response: err.message || String(err),
       responseTimeMs: durationMs,
       status: "error",
       statusCode: 500,
       errorMessage: err.message || String(err),
-      action: "Translation Challenge",
+      action: "Translation Challenge (Error)",
     }).catch(() => {});
 
-    // Directly propagate the error to inform the user instead of masking it with mock data
-    throw new Error(
-      `Không thể tạo thử thách từ Cloudflare LLM Worker: ${err.message || "Lỗi kết nối"}. Vui lòng kiểm tra lại Access Key hoặc đường truyền.`
-    );
+    throw err;
   }
 }
 
@@ -259,44 +286,18 @@ Respond strictly in valid JSON:
 // --------------------------------------------------------------------------
 export async function evaluateChallengeTurn(
   challenge: ChallengeData,
-  userMessage: string
+  userMessage: string,
+  options?: RequestCallOptions
 ): Promise<ChallengeTurnResult> {
-  const trimmed = userMessage.trim();
-  const lower = trimmed.toLowerCase();
-  const startTime = Date.now();
-
-  // Instant client heuristic: Check incomplete submission
-  const trailingConnectives = [
-    "the", "a", "an", "is", "are", "was", "were", "to", "in", "with", "and", "or",
-    "because", "if", "for", "at", "about", "of", "on", "as", "by", "that", "this",
-  ];
-  const words = trimmed.split(/\s+/).filter(Boolean);
-  const lastWord = words[words.length - 1]?.toLowerCase();
-  const isPunct = /[.?!…]$/.test(trimmed);
-
-  if (!isPunct && (words.length <= 2 || (lastWord && trailingConnectives.includes(lastWord)))) {
-    return {
-      intent: "incomplete",
-      agentReply: `⚠️ Có vẻ như bạn đã gửi câu khi chưa gõ xong: *"${trimmed}"*. Hãy hoàn tất câu dịch của bạn nhé!`,
-      suggestedActions: [
-        {
-          label: `✏️ Điền lại: "${trimmed}…"`,
-          action: "repopulate_input",
-          payload: { text: trimmed + " " },
-        },
-        {
-          label: "🏳️ Xem đáp án & bỏ qua",
-          action: "submit_empty_challenge",
-        },
-      ],
-      provider: "client-heuristic",
-      model: "instant-detection",
-      responseTimeMs: Date.now() - startTime,
-    };
+  if (options?.abortSignal?.aborted) {
+    throw new DOMException("The user aborted a request.", "AbortError");
   }
 
-  // Instant client heuristic: Skip or Reveal answer
-  const targetWord = challenge?.targetWordFromCollection?.word || "từ mục tiêu";
+  const startTime = Date.now();
+  const trimmed = userMessage.trim();
+  const lower = trimmed.toLowerCase();
+
+  const targetWord = challenge?.targetWordFromCollection?.word || "target word";
   const prevStrength = challenge?.targetWordFromCollection?.strength ?? 0;
 
   if (!trimmed || lower === "skip" || lower === "(no answer provided)") {
@@ -366,6 +367,7 @@ export async function evaluateChallengeTurn(
           challenge,
           userSubmission: userMessage,
         }),
+        signal: options?.abortSignal,
       });
 
       if (res.ok) {
@@ -384,7 +386,10 @@ export async function evaluateChallengeTurn(
           return data;
         }
       }
-    } catch {
+    } catch (err: any) {
+      if (options?.abortSignal?.aborted || err.name === "AbortError") {
+        throw err;
+      }
       // Proceed to direct Cloudflare Worker execution
     }
   }
@@ -433,46 +438,55 @@ Respond strictly in valid JSON with fields: score, scoreLabel, incorporatedTarge
         response_format: { type: "json_object" },
         preferred_provider: preferredProvider,
       },
-      accessKey,
-      30000
+      {
+        accessKey,
+        timeoutMs: 30000,
+        abortSignal: options?.abortSignal,
+        action: "evaluateChallenge",
+        requestId: options?.requestId,
+      }
     );
 
     let parsed: any = {};
     try {
-      parsed = JSON.parse(result.content);
-    } catch {
-      const match = result.content.match(/\{[\s\S]*\}/);
-      if (match) parsed = JSON.parse(match[0]);
+      parsed = parseOrRepairJson(result.content);
+    } catch (parseErr: any) {
+      throw new Error(`Mô hình AI trả về JSON lỗi: ${parseErr.message}`);
     }
 
     if (!parsed || typeof parsed.score === "undefined") {
       throw new Error("Mô hình AI không trả về điểm số hợp lệ.");
     }
 
-    const didIncorporate = Boolean(parsed.incorporatedTargetWord);
-    const strengthGained = didIncorporate ? 30 : 10;
-    const newStrength = Math.min(100, prevStrength + strengthGained);
     const durationMs = Date.now() - startTime;
+    const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
 
-    const evalResult: ChallengeTurnResult = {
+    let strengthGained = 0;
+    if (score >= 90) strengthGained = 30;
+    else if (score >= 75) strengthGained = 20;
+    else if (score >= 60) strengthGained = 15;
+    else if (score >= 40) strengthGained = 10;
+    else strengthGained = 5;
+
+    const newStrength = Math.min(100, prevStrength + strengthGained);
+
+    const turnResult: ChallengeTurnResult = {
       intent: "submission",
       evaluation: {
-        score: typeof parsed.score === "number" ? parsed.score : (didIncorporate ? 90 : 75),
-        scoreLabel: parsed.scoreLabel || (didIncorporate ? "Xuất sắc! 🌟" : "Làm tốt lắm! 👏"),
+        score,
+        scoreLabel: parsed.scoreLabel || (score >= 80 ? "Rất tốt! 👏" : "Cần cố gắng thêm! 💪"),
         userTranslation: trimmed,
-        incorporatedTargetWord: didIncorporate,
-        targetWordUsed: targetWord,
-        incorporatedVocabClues: Array.isArray(parsed.incorporatedVocabClues)
-          ? parsed.incorporatedVocabClues
-          : [],
-        whatWentWell: parsed.whatWentWell || "Bạn đã hoàn thành tốt bản dịch của mình.",
-        areasForImprovement: parsed.areasForImprovement || "Hãy tiếp tục luyện tập các cấu trúc tự nhiên.",
-        correctedSentence: parsed.correctedSentence || challenge?.idealTranslation || "Optimal translation.",
-        suggestedVocabulary: parsed.suggestedVocabulary || [],
+        incorporatedTargetWord: Boolean(parsed.incorporatedTargetWord),
+        targetWordUsed: parsed.targetWordUsed || targetWord,
+        incorporatedVocabClues: Array.isArray(parsed.incorporatedVocabClues) ? parsed.incorporatedVocabClues : [],
         targetWordPrevStrength: prevStrength,
         targetWordNewStrength: newStrength,
         targetWordStrengthGained: strengthGained,
-        augmentedWords: challenge?.targetWordFromCollection
+        whatWentWell: parsed.whatWentWell || "Bạn đã cố gắng dịch câu giao tiếp này rất sát nghĩa.",
+        areasForImprovement: parsed.areasForImprovement || "Hãy chú ý độ tự nhiên của câu khi nói với người bản xứ.",
+        correctedSentence: parsed.correctedSentence || challenge.idealTranslation,
+        suggestedVocabulary: Array.isArray(parsed.suggestedVocabulary) ? parsed.suggestedVocabulary : [],
+        augmentedWords: challenge.targetWordFromCollection
           ? [
               {
                 word: challenge.targetWordFromCollection.word,
@@ -488,6 +502,7 @@ Respond strictly in valid JSON with fields: score, scoreLabel, incorporatedTarge
       },
       provider: result.provider,
       model: result.model,
+      tier: result.tier,
       responseTimeMs: durationMs,
     };
 
@@ -495,15 +510,18 @@ Respond strictly in valid JSON with fields: score, scoreLabel, incorporatedTarge
       provider: result.provider,
       model: result.model,
       prompt: promptSummary,
-      response: JSON.stringify(evalResult),
+      response: JSON.stringify(turnResult),
       responseTimeMs: durationMs,
       status: "success",
       statusCode: 200,
       action: "Challenge Evaluation (Cloudflare Edge)",
     }).catch(() => {});
 
-    return evalResult;
+    return turnResult;
   } catch (err: any) {
+    if (options?.abortSignal?.aborted || err.name === "AbortError") {
+      throw err;
+    }
     const durationMs = Date.now() - startTime;
     logApiRequest({
       provider: "cloudflare-worker",
@@ -517,9 +535,7 @@ Respond strictly in valid JSON with fields: score, scoreLabel, incorporatedTarge
       action: "Challenge Evaluation",
     }).catch(() => {});
 
-    throw new Error(
-      `Không thể chấm bài qua Cloudflare LLM Worker: ${err.message || "Lỗi kết nối"}. Vui lòng thử lại.`
-    );
+    throw err;
   }
 }
 
@@ -529,8 +545,13 @@ Respond strictly in valid JSON with fields: score, scoreLabel, incorporatedTarge
 export async function askAiTutor(
   challenge: ChallengeData,
   userQuestion: string,
-  userTranslation?: string
+  userTranslation?: string,
+  options?: RequestCallOptions
 ): Promise<AskAiResponse> {
+  if (options?.abortSignal?.aborted) {
+    throw new DOMException("The user aborted a request.", "AbortError");
+  }
+
   const accessKey = getStoredAccessKey();
   const sampleMode = isStoredSampleMode();
 
@@ -555,6 +576,7 @@ export async function askAiTutor(
           userQuestion,
           userTranslation,
         }),
+        signal: options?.abortSignal,
       });
 
       if (res.ok) {
@@ -573,7 +595,10 @@ export async function askAiTutor(
           return data;
         }
       }
-    } catch {
+    } catch (err: any) {
+      if (options?.abortSignal?.aborted || err.name === "AbortError") {
+        throw err;
+      }
       // Proceed to direct Cloudflare Worker execution
     }
   }
@@ -613,16 +638,20 @@ Respond strictly in valid JSON with fields: 'answer' (string) and 'suggestedFoll
         response_format: { type: "json_object" },
         preferred_provider: preferredProvider,
       },
-      accessKey,
-      30000
+      {
+        accessKey,
+        timeoutMs: 30000,
+        abortSignal: options?.abortSignal,
+        action: "askAiTutor",
+        requestId: options?.requestId,
+      }
     );
 
     let parsed: any = {};
     try {
-      parsed = JSON.parse(result.content);
-    } catch {
-      const match = result.content.match(/\{[\s\S]*\}/);
-      if (match) parsed = JSON.parse(match[0]);
+      parsed = parseOrRepairJson(result.content);
+    } catch (parseErr: any) {
+      throw new Error(`Không nhận được định dạng JSON chuẩn từ gia sư AI: ${parseErr.message}`);
     }
 
     if (!parsed || !parsed.answer) {
@@ -650,6 +679,9 @@ Respond strictly in valid JSON with fields: 'answer' (string) and 'suggestedFoll
 
     return aiResponse;
   } catch (err: any) {
+    if (options?.abortSignal?.aborted || err.name === "AbortError") {
+      throw err;
+    }
     const durationMs = Date.now() - startTime;
     logApiRequest({
       provider: "cloudflare-worker",
