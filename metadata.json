@@ -1,0 +1,6 @@
+{
+  "name": "Translation Challenge",
+  "description": "Mobile-first interactive Vietnamese to English translation practice with 24-hour SRS spaced repetition and everyday conversational sentence challenges.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,20 @@
+name = "groq-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare Workers KV Namespace for cross-edge state persistence
+kv_namespaces = [
+  { binding = "LLM_STATE_KV", id = "<YOUR_KV_NAMESPACE_ID>", preview_id = "<YOUR_PREVIEW_KV_ID>" }
+]
+
+[vars]
+DEFAULT_TIMEOUT_MS = "30000"
+PROXY_SECRET = "your-secure-client-proxy-secret"
+
+# Upstream API Keys should be managed as secrets:
+# Run: wrangler secret put GEMINI_API_KEY
+# Run: wrangler secret put GROQ_API_KEY
+# Run: wrangler secret put OPENROUTER_API_KEY
+# Run: wrangler secret put NINEFLARE_API_KEY
+# Run: wrangler secret put CLOUDFLARE_API_KEY
