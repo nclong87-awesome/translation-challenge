@@ -62,7 +62,7 @@ jobs:
           else
             npm version patch --no-git-tag-version
             VERSION=$(node -p "require('./package.json').version")
-            git add package.json
+            git add package.json package-lock.json
             git commit -m "🚀 Release v${VERSION} [skip ci]"
             echo "bumped=true" >> $GITHUB_OUTPUT
           fi
