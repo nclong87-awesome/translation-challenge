@@ -33,11 +33,23 @@ export async function initAccessKeyFromServer(): Promise<string | null> {
   return null;
 }
 
+const PLACEHOLDERS = new Set([
+  "your-secure-client-proxy-secret",
+  "your-access-key",
+  "placeholder",
+  "your_key_here",
+  "my_access_key",
+  "changeme"
+]);
+
 export function getStoredAccessKey(): string | null {
   try {
     const key = localStorage.getItem(ACCESS_KEY_STORAGE_KEY);
     if (key && key.trim().length > 0) {
-      return key.trim();
+      const trimmed = key.trim();
+      if (!PLACEHOLDERS.has(trimmed.toLowerCase())) {
+        return trimmed;
+      }
     }
   } catch (err) {
     console.error("Failed to read access key from localStorage:", err);

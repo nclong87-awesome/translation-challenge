@@ -19,21 +19,33 @@ const PORT = 3000;
 
 app.use(express.json());
 
+const PLACEHOLDERS = new Set([
+  "your-secure-client-proxy-secret",
+  "your-access-key",
+  "placeholder",
+  "your_key_here",
+  "my_access_key",
+  "changeme"
+]);
+
 // Helper to extract Cloudflare Worker access key from incoming request headers or server env
 function extractProxyKey(req: Request): string {
+  const serverKey = process.env.ACCESS_KEY || process.env.ACESS_KEY || "";
   const headerKey = req.headers["x-access-key"];
   if (typeof headerKey === "string" && headerKey.trim()) {
-    return headerKey.trim();
+    const trimmed = headerKey.trim();
+    if (!PLACEHOLDERS.has(trimmed.toLowerCase())) {
+      return trimmed;
+    }
   }
   const auth = req.headers["authorization"];
   if (typeof auth === "string" && auth.startsWith("Bearer ")) {
-    return auth.slice(7).trim();
+    const token = auth.slice(7).trim();
+    if (!PLACEHOLDERS.has(token.toLowerCase())) {
+      return token;
+    }
   }
-  return (
-    process.env.ACCESS_KEY ||
-    process.env.ACESS_KEY ||
-    ""
-  );
+  return serverKey;
 }
 
 // Lazy-initialized Gemini AI client
