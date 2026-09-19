@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { AlertTriangle, RefreshCw, X, ShieldAlert, Play, Pause } from "lucide-react";
 
 export interface RetryCountdownBannerProps {
@@ -19,20 +19,26 @@ export const RetryCountdownBanner: React.FC<RetryCountdownBannerProps> = ({
   const [secondsLeft, setSecondsLeft] = useState<number>(initialCountdownSeconds);
   const [isCancelled, setIsCancelled] = useState<boolean>(false);
 
+  const onRetryRef = useRef(onRetry);
+  useEffect(() => {
+    onRetryRef.current = onRetry;
+  }, [onRetry]);
+
+  // Reset countdown if a new error occurs or failedModel changes
+  useEffect(() => {
+    setSecondsLeft(initialCountdownSeconds);
+    setIsCancelled(false);
+  }, [errorMessage, failedModel, initialCountdownSeconds]);
+
   // Automated 1-second countdown ticker
   useEffect(() => {
     if (isCancelled) return;
-
-    if (secondsLeft <= 0) {
-      onRetry();
-      return;
-    }
 
     const timer = setInterval(() => {
       setSecondsLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          onRetry();
+          onRetryRef.current();
           return 0;
         }
         return prev - 1;
@@ -40,7 +46,7 @@ export const RetryCountdownBanner: React.FC<RetryCountdownBannerProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [secondsLeft, isCancelled, onRetry]);
+  }, [isCancelled]);
 
   const handleCancelCountdown = () => {
     setIsCancelled(true);

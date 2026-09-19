@@ -32,6 +32,7 @@ export function AskAiDrawer({
   const [loading, setLoading] = useState(false);
   const [showSpoiledTranslation, setShowSpoiledTranslation] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [failedModel, setFailedModel] = useState<string | undefined>(undefined);
   const [lastQuery, setLastQuery] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -103,6 +104,7 @@ export function AskAiDrawer({
     setInputQuestion("");
     setLoading(true);
     setErrorMessage(null);
+    setFailedModel(undefined);
     setLastQuery(textToSend);
 
     const controller = new AbortController();
@@ -122,11 +124,13 @@ export function AskAiDrawer({
         },
       ]);
       setErrorMessage(null);
+      setFailedModel(undefined);
     } catch (err: any) {
       if (controller.signal.aborted || err.name === "AbortError") {
         return;
       }
       setErrorMessage(err?.message || "Không thể kết nối với gia sư AI");
+      setFailedModel(err?.failedModel);
     } finally {
       setLoading(false);
       abortControllerRef.current = null;
@@ -256,8 +260,12 @@ export function AskAiDrawer({
             <div className="w-full my-2">
               <RetryCountdownBanner
                 errorMessage={errorMessage}
+                failedModel={failedModel}
                 onRetry={() => handleSend(lastQuery)}
-                onDismiss={() => setErrorMessage(null)}
+                onDismiss={() => {
+                  setErrorMessage(null);
+                  setFailedModel(undefined);
+                }}
               />
             </div>
           )}

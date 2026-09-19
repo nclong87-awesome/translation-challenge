@@ -108,9 +108,10 @@ export default {
       const timeoutMs = parseInt(env.DEFAULT_TIMEOUT_MS || '30000', 10);
       const incomingProxyKey = proxyKeyHeader || authHeader.replace(/^Bearer\s+/i, '').trim();
       const excludedKeys = new Set<string>();
-      const maxRetries = 4;
+      const maxRetries = 1; // Do not automatically retry immediately 4 times before showing retrying countdown
       let attempt = 0;
       let lastErrorReason = 'Unknown error';
+      let lastCandidate: any = null;
 
       while (attempt < maxRetries) {
         attempt++;
@@ -123,6 +124,7 @@ export default {
         );
 
         const candidate = routing.candidate;
+        lastCandidate = candidate;
         const candidateKey = `${candidate.provider}:${candidate.model}`;
         const startTime = Date.now();
 
@@ -173,11 +175,14 @@ export default {
         }
       }
 
-      // If all fallback attempts failed
+      // If candidate attempt failed, return error with candidate info immediately
+      const failedModelName = lastCandidate ? `${lastCandidate.provider}/${lastCandidate.model}` : undefined;
       return jsonResponse({
-        error: 'All available LLM candidate models failed.',
+        error: failedModelName ? `Lỗi kết nối mô hình ${failedModelName}: ${lastErrorReason}` : `Lỗi kết nối mô hình AI: ${lastErrorReason}`,
+        failedModel: failedModelName,
         attempts: attempt,
-        lastError: lastErrorReason
+        lastError: lastErrorReason,
+        status: 'error'
       }, 502);
     }
 

@@ -122,6 +122,11 @@ export async function generateChallenge(
           }).catch(() => {});
           return data;
         }
+      } else if (res.status === 502 || res.status === 503) {
+        const errJson = await res.json().catch(() => ({}));
+        const err: any = new Error(errJson.error || `Server HTTP ${res.status}`);
+        err.failedModel = errJson.failedModel;
+        throw err;
       }
     } catch (err: any) {
       if (options?.abortSignal?.aborted || err.name === "AbortError") {
@@ -385,6 +390,11 @@ export async function evaluateChallengeTurn(
           }).catch(() => {});
           return data;
         }
+      } else if (res.status === 502 || res.status === 503) {
+        const errJson = await res.json().catch(() => ({}));
+        const err: any = new Error(errJson.error || `Server HTTP ${res.status}`);
+        err.failedModel = errJson.failedModel;
+        throw err;
       }
     } catch (err: any) {
       if (options?.abortSignal?.aborted || err.name === "AbortError") {
@@ -594,6 +604,11 @@ export async function askAiTutor(
           }).catch(() => {});
           return data;
         }
+      } else if (res.status === 502 || res.status === 503) {
+        const errJson = await res.json().catch(() => ({}));
+        const err: any = new Error(errJson.error || `Server HTTP ${res.status}`);
+        err.failedModel = errJson.failedModel;
+        throw err;
       }
     } catch (err: any) {
       if (options?.abortSignal?.aborted || err.name === "AbortError") {
@@ -695,8 +710,10 @@ Respond strictly in valid JSON with fields: 'answer' (string) and 'suggestedFoll
       action: "Challenge Ask AI",
     }).catch(() => {});
 
-    throw new Error(
-      `Không thể kết nối với gia sư AI qua Cloudflare LLM: ${err.message || "Lỗi kết nối"}. Vui lòng thử lại.`
+    const wrapErr: any = new Error(
+      `Không thể kết nối với gia sư AI: ${err.message || "Lỗi kết nối"}. Vui lòng thử lại.`
     );
+    wrapErr.failedModel = err.failedModel;
+    throw wrapErr;
   }
 }

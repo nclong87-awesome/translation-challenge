@@ -278,8 +278,15 @@ Respond strictly in valid JSON with fields: nativeSentence, topicContext, idealT
             responseTimeMs,
           });
         }
-      } catch (proxyErr) {
-        console.warn("[Challenge Generate] Cloudflare Worker proxy error, trying Gemini if available:", proxyErr);
+      } catch (proxyErr: any) {
+        console.warn("[Challenge Generate] Cloudflare Worker proxy error:", proxyErr);
+        if (!ai) {
+          return res.status(502).json({
+            error: proxyErr.message || "Lỗi kết nối mô hình qua Cloudflare Worker",
+            failedModel: proxyErr.failedModel,
+            status: "error"
+          });
+        }
       }
     }
 
@@ -577,8 +584,15 @@ Respond strictly in valid JSON with fields: score, scoreLabel, incorporatedTarge
           responseTimeMs: Date.now() - startTime,
         });
       }
-    } catch (proxyErr) {
-      console.warn("[Evaluate] Cloudflare Worker proxy error, trying Gemini fallback:", proxyErr);
+    } catch (proxyErr: any) {
+      console.warn("[Evaluate] Cloudflare Worker proxy error:", proxyErr);
+      if (!ai) {
+        return res.status(502).json({
+          error: proxyErr.message || "Lỗi kết nối mô hình chấm câu",
+          failedModel: proxyErr.failedModel,
+          status: "error"
+        });
+      }
     }
   }
 
@@ -790,8 +804,15 @@ Respond strictly in valid JSON with fields: 'answer' (string) and 'suggestedFoll
         if (parsed && parsed.answer) {
           return res.json(parsed);
         }
-      } catch (err) {
-        console.warn("[Ask AI] Cloudflare Worker proxy error, trying Gemini fallback:", err);
+      } catch (err: any) {
+        console.warn("[Ask AI] Cloudflare Worker proxy error:", err);
+        if (!ai) {
+          return res.status(502).json({
+            error: err.message || "Lỗi kết nối mô hình gia sư AI",
+            failedModel: err.failedModel,
+            status: "error"
+          });
+        }
       }
     }
 

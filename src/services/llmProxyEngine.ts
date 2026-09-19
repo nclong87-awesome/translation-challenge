@@ -766,7 +766,7 @@ export async function executeUpstreamCall(
   const isGeminiNative = candidate.provider === "gemini";
   let activePayload = { ...payload };
 
-  const maxTransportRetries = 1; // Tier 1 allows 1 retry with backoff before escalating to Tier 2
+  const maxTransportRetries = 0; // Immediate failure surfacing to trigger retry countdown banner
   let transportAttempt = 0;
 
   while (transportAttempt <= maxTransportRetries) {
@@ -959,6 +959,7 @@ export interface ChatCompletionOptions {
   abortSignal?: AbortSignal;
   action?: string;
   requestId?: string;
+  maxRetries?: number;
 }
 
 /**
@@ -985,6 +986,8 @@ export async function executeChatCompletionWithRotation(
   let action: string | undefined;
   let requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+  let maxRetries = 1; // Default to 1: surface errors immediately to show countdown banner instead of silently retrying 4 times
+
   if (typeof accessKeyOrOptions === "object" && accessKeyOrOptions !== null) {
     accessKey = accessKeyOrOptions.accessKey;
     timeoutMs = accessKeyOrOptions.timeoutMs ?? timeoutMsInput;
@@ -993,14 +996,17 @@ export async function executeChatCompletionWithRotation(
     if (accessKeyOrOptions.requestId) {
       requestId = accessKeyOrOptions.requestId;
     }
+    if (accessKeyOrOptions.maxRetries !== undefined) {
+      maxRetries = accessKeyOrOptions.maxRetries;
+    }
   } else {
     accessKey = accessKeyOrOptions;
   }
 
   const excludedKeys = new Set<string>();
-  const maxRetries = 4;
   let attempt = 0;
   let lastErrorReason = "Unknown error";
+  let lastCandidate: ModelCandidate | null = null;
 
   while (attempt < maxRetries) {
     if (abortSignal?.aborted) {
@@ -1024,6 +1030,7 @@ export async function executeChatCompletionWithRotation(
     );
 
     const candidate = routing.candidate;
+    lastCandidate = candidate;
     const candidateKey = `${candidate.provider}:${candidate.model}`;
     const startTime = Date.now();
     const expectedDurationMs = getExpectedResponseTimeMs(candidate.provider, candidate.model);
@@ -1095,15 +1102,26 @@ export async function executeChatCompletionWithRotation(
     }
   }
 
+  const failedModelName = lastCandidate ? `${lastCandidate.provider}/${lastCandidate.model}` : undefined;
   llmEventBus.emitEnd({
     requestId,
-    provider: "all-candidates",
-    model: "failed",
+    provider: lastCandidate?.provider || "all-candidates",
+    model: lastCandidate?.model || "failed",
     durationMs: 0,
     status: "error",
     errorReason: lastErrorReason,
     action
   });
 
-  throw new Error(`All available LLM candidate models failed (${attempt} attempts). Last error: ${lastErrorReason}`);
+  const modelErr: any = new Error(
+    failedModelName
+      ? `Lỗi kết nối mô hình ${failedModelName}: ${lastErrorReason}`
+      : `Lỗi kết nối mô hình AI: ${lastErrorReason}`
+  );
+  modelErr.failedModel = failedModelName;
+  modelErr.provider = lastCandidate?.provider;
+  modelErr.model = lastCandidate?.model;
+  modelErr.lastErrorReason = lastErrorReason;
+  modelErr.attempts = attempt;
+  throw modelErr;
 }
