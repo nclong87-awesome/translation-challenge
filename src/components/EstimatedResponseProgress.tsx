@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useId } from "react";
-import { X, Clock, Zap, Cpu, Compass } from "lucide-react";
+import React, { useEffect, useState, useId, useRef } from "react";
+import { X, Clock, Zap, Cpu, Compass, AlertTriangle, RefreshCw, ShieldAlert, Pause } from "lucide-react";
 import { llmEventBus, RequestStartEvent } from "../services/llmEventBus";
 
 export interface EstimatedResponseProgressProps {
@@ -7,6 +7,16 @@ export interface EstimatedResponseProgressProps {
   onAbort?: () => void;
   overrideEvent?: RequestStartEvent | null;
   asModal?: boolean;
+  error?: {
+    errorMessage: string;
+    failedModel?: string;
+    retryCount?: number;
+    maxRetries?: number;
+    onRetry: () => void;
+    onCancelCountdown?: () => void;
+    onDismiss?: () => void;
+    initialCountdownSeconds?: number;
+  } | null;
 }
 
 export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps> = ({
@@ -14,6 +24,7 @@ export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps>
   onAbort,
   overrideEvent,
   asModal = true,
+  error,
 }) => {
   const gradientId = useId();
   const [currentEvent, setCurrentEvent] = useState<RequestStartEvent | null>(
@@ -57,6 +68,171 @@ export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps>
 
     return () => clearInterval(interval);
   }, [currentEvent]);
+
+  // If error is present, render the gorgeous retry countdown modal state
+  if (error) {
+    const {
+      errorMessage,
+      failedModel,
+      retryCount = 0,
+      maxRetries = 3,
+      onRetry,
+      onDismiss,
+      initialCountdownSeconds = 5,
+    } = error;
+
+    const [secondsLeft, setSecondsLeft] = useState<number>(initialCountdownSeconds);
+    const [isCancelled, setIsCancelled] = useState<boolean>(retryCount >= maxRetries);
+    const onRetryRef = useRef(onRetry);
+
+    useEffect(() => {
+      onRetryRef.current = onRetry;
+    }, [onRetry]);
+
+    useEffect(() => {
+      if (retryCount >= maxRetries) {
+        setIsCancelled(true);
+      } else {
+        setSecondsLeft(initialCountdownSeconds);
+        setIsCancelled(false);
+      }
+    }, [errorMessage, failedModel, initialCountdownSeconds, retryCount, maxRetries]);
+
+    useEffect(() => {
+      if (isCancelled || retryCount >= maxRetries) return;
+
+      const timer = setInterval(() => {
+        setSecondsLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            onRetryRef.current();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }, [isCancelled, retryCount, maxRetries]);
+
+    const handleImmediateRetry = () => {
+      setIsCancelled(true);
+      onRetry();
+    };
+
+    const errorCard = (
+      <div
+        id="retry-countdown-modal-card"
+        className="relative overflow-hidden rounded-3xl border border-rose-200 bg-white p-6 sm:p-7 shadow-2xl backdrop-blur-md transition-all w-full max-w-md text-left"
+      >
+        {/* Accent Top Border */}
+        <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-rose-500 via-amber-500 to-rose-400 animate-pulse" />
+
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="rounded-2xl bg-rose-100 p-3 text-rose-600 flex-shrink-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-stone-900">
+                Lỗi kết nối mô hình AI
+              </h3>
+              {failedModel && (
+                <span className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/80 px-2.5 py-0.5 font-mono text-xs text-rose-800">
+                  <ShieldAlert className="h-3 w-3 text-rose-600" />
+                  {failedModel}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              aria-label="Đóng"
+              className="rounded-xl p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Error message */}
+        <p className="text-xs sm:text-sm text-stone-700 bg-rose-50/50 rounded-2xl p-3.5 border border-rose-100 mb-4 leading-relaxed break-words font-medium">
+          {errorMessage}
+        </p>
+
+        {/* Circuit breaker isolation note */}
+        <div className="mb-5 text-xs text-stone-600 bg-stone-50 rounded-2xl p-3 border border-stone-200 flex items-start gap-2.5">
+          <span className="inline-block h-2 w-2 rounded-full bg-rose-500 mt-1 shrink-0 animate-ping" />
+          <span className="leading-relaxed">
+            <strong>Circuit Breaker:</strong> Đã cách ly mô hình gặp lỗi và tự động định tuyến sang ứng viên khỏe mạnh tiếp theo.
+          </span>
+        </div>
+
+        {/* Countdown status & Action buttons */}
+        <div className="space-y-4 pt-3 border-t border-stone-100">
+          {retryCount >= maxRetries ? (
+            <div className="text-xs text-rose-900 font-bold bg-rose-100/70 p-3 rounded-2xl border border-rose-200">
+              Đã đạt tối đa {maxRetries} lần thử lại tự động. Vui lòng bấm thử lại thủ công bên dưới.
+            </div>
+          ) : !isCancelled ? (
+            <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200 p-3.5 rounded-2xl">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-600" />
+                </span>
+                <span>Tự động thử lại (lần {retryCount + 1}/{maxRetries}):</span>
+              </div>
+              <span className="font-mono text-base font-extrabold text-amber-700 bg-white px-3 py-1 rounded-xl shadow-2xs border border-amber-200">
+                {secondsLeft}s
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-stone-600 bg-stone-100 p-3 rounded-2xl font-medium">
+              <Pause className="h-4 w-4 text-stone-500" />
+              <span>Đã tạm dừng đếm ngược tự động.</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 pt-1">
+            {retryCount < maxRetries && !isCancelled && (
+              <button
+                type="button"
+                onClick={() => setIsCancelled(true)}
+                className="px-4 py-2.5 rounded-2xl border border-stone-300 bg-white text-stone-700 text-xs font-bold hover:bg-stone-50 transition active:scale-95 shadow-2xs"
+              >
+                Dừng đếm ngược
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleImmediateRetry}
+              className="flex-1 px-4 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-extrabold shadow-md transition flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="h-4 w-4 animate-spin-reverse" />
+              Thử lại ngay
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+
+    if (asModal) {
+      return (
+        <div
+          id="retry-countdown-modal-backdrop"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+        >
+          {errorCard}
+        </div>
+      );
+    }
+    return errorCard;
+  }
 
   if (!currentEvent) {
     return null;

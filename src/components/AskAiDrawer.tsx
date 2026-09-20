@@ -258,22 +258,23 @@ export function AskAiDrawer({
             </div>
           )}
 
-          {/* Tier 3 Retry Countdown Banner on failure */}
+          {/* Tier 3 Retry Countdown Modal on failure */}
           {errorMessage && (
-            <div className="w-full my-2">
-              <RetryCountdownBanner
-                errorMessage={errorMessage}
-                failedModel={failedModel}
-                retryCount={retryCount}
-                maxRetries={3}
-                onRetry={() => handleSend(lastQuery)}
-                onDismiss={() => {
+            <EstimatedResponseProgress
+              asModal={true}
+              error={{
+                errorMessage,
+                failedModel,
+                retryCount,
+                maxRetries: 3,
+                onRetry: () => handleSend(lastQuery),
+                onDismiss: () => {
                   setErrorMessage(null);
                   setFailedModel(undefined);
                   setRetryCount(0);
-                }}
-              />
-            </div>
+                },
+              }}
+            />
           )}
         </div>
 

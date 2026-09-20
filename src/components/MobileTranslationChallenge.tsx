@@ -464,40 +464,21 @@ export function MobileTranslationChallenge({
             </p>
           </div>
         ) : challengeError ? (
-          <div className="w-full max-w-md mx-auto my-auto space-y-3">
-            <RetryCountdownBanner
-              errorMessage={challengeError}
-              failedModel={challengeFailedModel}
-              retryCount={challengeRetryCount}
-              maxRetries={3}
-              onRetry={() => loadNewChallenge()}
-              onDismiss={() => {
+          <EstimatedResponseProgress
+            asModal={true}
+            error={{
+              errorMessage: challengeError,
+              failedModel: challengeFailedModel,
+              retryCount: challengeRetryCount,
+              maxRetries: 3,
+              onRetry: () => loadNewChallenge(),
+              onDismiss: () => {
                 setChallengeError(null);
                 setChallengeFailedModel(undefined);
                 setChallengeRetryCount(0);
-              }}
-            />
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-              {onChangeAccessKey && (
-                <button
-                  type="button"
-                  onClick={onChangeAccessKey}
-                  className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold border border-stone-200 transition active:scale-95 flex items-center gap-1.5"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-stone-600" />
-                  Đổi Access Key
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setIsProxySettingsOpen(true)}
-                className="px-4 py-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-800 text-xs font-semibold border border-orange-200 transition active:scale-95 flex items-center gap-1.5"
-              >
-                <Zap className="w-3.5 h-3.5 text-orange-500" />
-                Cài đặt Proxy
-              </button>
-            </div>
-          </div>
+              },
+            }}
+          />
         ) : !challenge ? (
           <div className="p-8 text-center text-xs text-stone-500">
             Không tìm thấy dữ liệu thử thách.
@@ -865,20 +846,21 @@ export function MobileTranslationChallenge({
         )}
 
         {evalError && !submitting && (
-          <div className="w-full">
-            <RetryCountdownBanner
-              errorMessage={evalError}
-              failedModel={evalFailedModel}
-              retryCount={evalRetryCount}
-              maxRetries={3}
-              onRetry={() => handleSubmit()}
-              onDismiss={() => {
+          <EstimatedResponseProgress
+            asModal={true}
+            error={{
+              errorMessage: evalError,
+              failedModel: evalFailedModel,
+              retryCount: evalRetryCount,
+              maxRetries: 3,
+              onRetry: () => handleSubmit(),
+              onDismiss: () => {
                 setEvalError(null);
                 setEvalFailedModel(undefined);
                 setEvalRetryCount(0);
-              }}
-            />
-          </div>
+              },
+            }}
+          />
         )}
 
         {!result?.evaluation ? (
