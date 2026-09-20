@@ -868,19 +868,19 @@ export function MobileTranslationChallenge({
 
         {!result?.evaluation ? (
           <>
-            {/* Sentence reminder right above the text box when keyboard is open or textarea is focused */}
-            {challenge && (isKeyboardOpen || isFocused) && (
+            {/* Sentence reminder right above the text box when keyboard is open */}
+            {challenge && isKeyboardOpen && (
               <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-2.5 flex items-center justify-between gap-2 shadow-xs animate-in fade-in duration-150">
-                <div className="flex items-center gap-1.5 overflow-hidden">
-                  <span className="text-[11px] font-bold text-emerald-800 shrink-0">🇻🇳 Dịch câu:</span>
-                  <p className="text-xs font-extrabold text-emerald-950 truncate">
+                <div className="flex items-start gap-1.5 flex-1">
+                  <span className="text-[11px] font-bold text-emerald-800 shrink-0 mt-0.5">🇻🇳 Dịch câu:</span>
+                  <p className="text-xs font-extrabold text-emerald-950 leading-relaxed">
                     "{challenge.nativeSentence}"
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => playAudio(challenge.nativeSentence, "vi-VN")}
-                  className="p-1 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 shrink-0 transition shadow-2xs"
+                  className="p-1 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 shrink-0 self-center transition shadow-2xs"
                   title="Nghe câu"
                 >
                   <Volume2 className="w-3.5 h-3.5" />
