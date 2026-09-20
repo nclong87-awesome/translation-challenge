@@ -7,7 +7,6 @@ import {
   RefreshCw,
   Clock,
   CheckCircle2,
-  AlertTriangle,
   Zap,
   RotateCcw
 } from "lucide-react";
@@ -40,11 +39,10 @@ export const ProxyDashboardModal: React.FC<ProxyDashboardModalProps> = ({
     }
   }, []);
 
+  // Load status once when modal opens. Do NOT auto-poll (no setInterval as requested).
   useEffect(() => {
     if (isOpen) {
       loadStatus();
-      const interval = setInterval(loadStatus, 5000);
-      return () => clearInterval(interval);
     }
   }, [isOpen, loadStatus]);
 
@@ -58,7 +56,7 @@ export const ProxyDashboardModal: React.FC<ProxyDashboardModalProps> = ({
   const handleUnlockSingle = async (provider: string, model: string) => {
     const success = await unlockGatewayModel(provider, model);
     if (success) {
-      setActionMessage(`Model ${provider}/${model} unlocked!`);
+      setActionMessage(`Đã mở khóa model ${provider}/${model}!`);
       setTimeout(() => setActionMessage(null), 3000);
       loadStatus();
     }
@@ -67,45 +65,57 @@ export const ProxyDashboardModal: React.FC<ProxyDashboardModalProps> = ({
   const handleUnlockAll = async () => {
     const success = await unlockGatewayModel(undefined, undefined, true);
     if (success) {
-      setActionMessage("All circuit breaker locks cleared!");
+      setActionMessage("Đã đặt lại toàn bộ khóa circuit breaker!");
       setTimeout(() => setActionMessage(null), 3000);
       loadStatus();
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      id="proxy-dashboard-overlay"
+      className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-4 animate-in fade-in"
+      onClick={onClose}
+    >
+      <div
+        id="proxy-dashboard-container"
+        className="w-full max-w-4xl bg-white sm:rounded-3xl h-full sm:h-[90vh] flex flex-col shadow-2xl overflow-hidden border-0 sm:border border-stone-200"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/60">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center font-bold">
+        <div className="px-5 py-4 border-b border-stone-200 flex items-center justify-between bg-white shrink-0 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-2xs shrink-0">
               <Activity className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="font-bold text-slate-800 dark:text-slate-100 text-lg flex items-center gap-2">
-                Cloudflare LLM Proxy Dashboard
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-medium">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold text-stone-900 truncate">
+                  Cloudflare LLM Proxy Dashboard
+                </h2>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0">
                   Live Edge Health
                 </span>
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              </div>
+              <p className="text-xs text-stone-500 truncate">
                 Multi-tier performance routing & adaptive circuit-breaker status
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={loadStatus}
               disabled={loading}
-              className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-white/60 dark:hover:bg-slate-700 transition"
-              title="Refresh metrics"
+              title="Làm mới trạng thái"
+              className="min-w-[36px] min-h-[36px] rounded-xl border border-stone-200 text-stone-600 hover:text-stone-900 hover:bg-stone-100 flex items-center justify-center transition"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-orange-500" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-white/60 dark:hover:bg-slate-700 transition"
+              title="Đóng"
+              className="min-w-[40px] min-h-[40px] rounded-xl border border-stone-200 text-stone-500 hover:text-stone-900 hover:bg-stone-100 flex items-center justify-center active:scale-95 transition"
             >
               <X className="w-5 h-5" />
             </button>
@@ -114,157 +124,158 @@ export const ProxyDashboardModal: React.FC<ProxyDashboardModalProps> = ({
 
         {/* Action Notice */}
         {actionMessage && (
-          <div className="bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 px-5 py-2 text-xs font-semibold flex items-center gap-2 border-b border-emerald-200 dark:border-emerald-800">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          <div className="bg-emerald-50 text-emerald-800 px-5 py-2.5 text-xs font-semibold flex items-center gap-2 border-b border-emerald-200 shrink-0">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             {actionMessage}
           </div>
         )}
 
         {/* Summary Stats Cards */}
-        <div className="grid grid-cols-4 gap-3 p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850">
-          <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Total Registered</div>
-            <div className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">{candidates.length}</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Across 6 providers</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 sm:p-5 border-b border-stone-200 bg-stone-50 shrink-0">
+          <div className="p-3.5 bg-white rounded-2xl border border-stone-200 shadow-2xs">
+            <div className="text-xs text-stone-500 font-medium">Đã đăng ký</div>
+            <div className="text-xl font-bold text-stone-900 mt-1">{candidates.length}</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Across 6 providers</div>
           </div>
 
-          <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Active & Available</div>
-            <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+          <div className="p-3.5 bg-white rounded-2xl border border-stone-200 shadow-2xs">
+            <div className="text-xs text-stone-500 font-medium">Khả dụng & Hoạt động</div>
+            <div className="text-xl font-bold text-emerald-600 mt-1">
               {Math.max(0, candidates.length - lockedCount)}
             </div>
-            <div className="text-[11px] text-emerald-600/80 mt-0.5">Ready for dispatch</div>
+            <div className="text-[11px] text-emerald-600/80 mt-0.5">Sẵn sàng điều phối</div>
           </div>
 
-          <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Circuit Locked</div>
-            <div className="text-xl font-bold text-red-600 dark:text-red-400 mt-1">{lockedCount}</div>
-            <div className="text-[11px] text-red-500/80 mt-0.5">Dynamic lock 1h - 96h</div>
+          <div className="p-3.5 bg-white rounded-2xl border border-stone-200 shadow-2xs">
+            <div className="text-xs text-stone-500 font-medium">Đang bị Khóa (Circuit)</div>
+            <div className="text-xl font-bold text-red-600 mt-1">{lockedCount}</div>
+            <div className="text-[11px] text-red-500 mt-0.5">Khóa tự động 1h - 96h</div>
           </div>
 
-          <div className="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Circuit Breaker</div>
+          <div className="p-3.5 bg-white rounded-2xl border border-stone-200 shadow-2xs flex flex-col justify-between">
+            <div className="text-xs text-stone-500 font-medium">Circuit Breaker</div>
             <button
               onClick={handleUnlockAll}
               disabled={lockedCount === 0}
-              className="mt-2 text-xs font-semibold py-1 px-2.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 dark:bg-red-950/60 dark:hover:bg-red-900/60 dark:text-red-300 border border-red-200 dark:border-red-800 flex items-center justify-center gap-1.5 transition disabled:opacity-40"
+              className="mt-2 text-xs font-semibold py-1.5 px-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 flex items-center justify-center gap-1.5 transition disabled:opacity-40"
             >
-              <RotateCcw className="w-3 h-3" />
-              Reset All Locks
+              <RotateCcw className="w-3.5 h-3.5" />
+              Đặt lại tất cả khóa
             </button>
           </div>
         </div>
 
         {/* Model Candidates Table */}
-        <div className="p-5 overflow-y-auto flex-1">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-400 uppercase tracking-wider font-semibold">
-                <th className="pb-3 pl-2">Provider</th>
-                <th className="pb-3">Model Candidate</th>
-                <th className="pb-3">Routing Tier</th>
-                <th className="pb-3">Avg Latency</th>
-                <th className="pb-3">Calls / Success</th>
-                <th className="pb-3">Circuit Status</th>
-                <th className="pb-3 text-right pr-2">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {candidates.map((cand) => {
-                const key = `${cand.provider}:${cand.model}`;
-                const m = metrics[key];
-                const lock = locks[key];
-                const isLocked = Boolean(lock && lock.expiresAt > Date.now());
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+              <thead>
+                <tr className="border-b border-stone-200 text-stone-400 uppercase tracking-wider font-semibold">
+                  <th className="py-2.5 pl-3">Provider</th>
+                  <th className="py-2.5">Model Candidate</th>
+                  <th className="py-2.5">Routing Tier</th>
+                  <th className="py-2.5">Latency TB</th>
+                  <th className="py-2.5">Calls / Thành công</th>
+                  <th className="py-2.5">Trạng thái</th>
+                  <th className="py-2.5 text-right pr-3">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {candidates.map((cand) => {
+                  const key = `${cand.provider}:${cand.model}`;
+                  const m = metrics[key];
+                  const lock = locks[key];
+                  const isLocked = Boolean(lock && lock.expiresAt > Date.now());
 
-                const latency = m?.avgResponseTimeMs || m?.lastResponseTimeMs;
-                const calls = m?.totalCalls || 0;
-                const successes = m?.totalSuccesses || 0;
+                  const latency = m?.avgResponseTimeMs || m?.lastResponseTimeMs;
+                  const calls = m?.totalCalls || 0;
+                  const successes = m?.totalSuccesses || 0;
 
-                let tierLabel = "Tier 1 (Probe)";
-                let tierBadgeClass = "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800";
+                  let tierLabel = "Tier 1 (Probe)";
+                  let tierBadgeClass = "bg-blue-50 text-blue-700 border-blue-200";
 
-                if (calls > 0 && latency !== null && latency !== undefined) {
-                  if (latency < 15000) {
-                    tierLabel = "Tier 1 (<15s Fast)";
-                    tierBadgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800";
-                  } else if (latency < 25000) {
-                    tierLabel = "Tier 2 (15-25s)";
-                    tierBadgeClass = "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800";
-                  } else {
-                    tierLabel = "Tier 4 (Slow)";
-                    tierBadgeClass = "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800";
+                  if (calls > 0 && latency !== null && latency !== undefined) {
+                    if (latency < 15000) {
+                      tierLabel = "Tier 1 (<15s Nhanh)";
+                      tierBadgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                    } else if (latency < 25000) {
+                      tierLabel = "Tier 2 (15-25s)";
+                      tierBadgeClass = "bg-amber-50 text-amber-700 border-amber-200";
+                    } else {
+                      tierLabel = "Tier 4 (Chậm)";
+                      tierBadgeClass = "bg-purple-50 text-purple-700 border-purple-200";
+                    }
                   }
-                }
 
-                // Format remaining lock time
-                let lockRemainingStr = "";
-                if (isLocked && lock) {
-                  const remMs = lock.expiresAt - Date.now();
-                  const remHrs = Math.floor(remMs / (3600 * 1000));
-                  const remMins = Math.floor((remMs % (3600 * 1000)) / 60000);
-                  lockRemainingStr = `${remHrs}h ${remMins}m`;
-                }
+                  let lockRemainingStr = "";
+                  if (isLocked && lock) {
+                    const remMs = lock.expiresAt - Date.now();
+                    const remHrs = Math.floor(remMs / (3600 * 1000));
+                    const remMins = Math.floor((remMs % (3600 * 1000)) / 60000);
+                    lockRemainingStr = `${remHrs}h ${remMins}m`;
+                  }
 
-                return (
-                  <tr
-                    key={key}
-                    className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition ${
-                      isLocked ? "bg-red-50/20 dark:bg-red-950/10" : ""
-                    }`}
-                  >
-                    <td className="py-3 pl-2 font-semibold text-slate-800 dark:text-slate-200 capitalize">
-                      {cand.provider}
-                    </td>
-                    <td className="py-3 font-mono text-slate-700 dark:text-slate-300">
-                      {cand.model}
-                    </td>
-                    <td className="py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${tierBadgeClass}`}>
-                        {tierLabel}
-                      </span>
-                    </td>
-                    <td className="py-3 font-mono text-slate-600 dark:text-slate-400">
-                      {latency ? `${(latency / 1000).toFixed(2)}s` : "—"}
-                    </td>
-                    <td className="py-3 text-slate-600 dark:text-slate-400">
-                      {calls > 0 ? `${calls} / ${successes}` : "0 / 0"}
-                    </td>
-                    <td className="py-3">
-                      {isLocked ? (
-                        <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium">
-                          <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-                          <span>Locked ({lockRemainingStr})</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Active</span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3 text-right pr-2">
-                      {isLocked ? (
-                        <button
-                          onClick={() => handleUnlockSingle(cand.provider, cand.model)}
-                          className="px-2 py-1 rounded bg-orange-50 hover:bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-300 border border-orange-200 dark:border-orange-800 text-[11px] font-semibold inline-flex items-center gap-1 transition"
-                        >
-                          <Unlock className="w-3 h-3" />
-                          Unlock
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">Ready</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  return (
+                    <tr
+                      key={key}
+                      className={`hover:bg-stone-50 transition ${
+                        isLocked ? "bg-red-50/30" : ""
+                      }`}
+                    >
+                      <td className="py-3.5 pl-3 font-semibold text-stone-900 capitalize">
+                        {cand.provider}
+                      </td>
+                      <td className="py-3.5 font-mono text-stone-800">
+                        {cand.model}
+                      </td>
+                      <td className="py-3.5">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold border ${tierBadgeClass}`}>
+                          {tierLabel}
+                        </span>
+                      </td>
+                      <td className="py-3.5 font-mono text-stone-600">
+                        {latency ? `${(latency / 1000).toFixed(2)}s` : "—"}
+                      </td>
+                      <td className="py-3.5 text-stone-600 font-mono">
+                        {calls > 0 ? `${calls} / ${successes}` : "0 / 0"}
+                      </td>
+                      <td className="py-3.5">
+                        {isLocked ? (
+                          <div className="flex items-center gap-1.5 text-red-600 font-medium">
+                            <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                            <span>Đã khóa ({lockRemainingStr})</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-emerald-600 font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Hoạt động</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 text-right pr-3">
+                        {isLocked ? (
+                          <button
+                            onClick={() => handleUnlockSingle(cand.provider, cand.model)}
+                            className="px-2.5 py-1 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 text-[11px] font-semibold inline-flex items-center gap-1 transition"
+                          >
+                            <Unlock className="w-3 h-3" />
+                            Mở khóa
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-stone-400">Sẵn sàng</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 bg-slate-50/50 dark:bg-slate-800/40">
-          <div className="flex items-center gap-4">
+        <div className="p-4 border-t border-stone-200 flex flex-wrap items-center justify-between gap-3 bg-white shrink-0 text-xs text-stone-500">
+          <div className="flex items-center gap-4 flex-wrap">
             <span className="flex items-center gap-1">
               <Zap className="w-3.5 h-3.5 text-orange-500" />
               ε-Greedy active (1 in 12 continuous exploration)
@@ -276,9 +287,9 @@ export const ProxyDashboardModal: React.FC<ProxyDashboardModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition"
+            className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition active:scale-95"
           >
-            Close
+            Đóng
           </button>
         </div>
       </div>
