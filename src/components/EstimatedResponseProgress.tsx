@@ -6,12 +6,14 @@ export interface EstimatedResponseProgressProps {
   actionLabel?: string;
   onAbort?: () => void;
   overrideEvent?: RequestStartEvent | null;
+  asModal?: boolean;
 }
 
 export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps> = ({
   actionLabel = "Đang xử lý bằng AI",
   onAbort,
   overrideEvent,
+  asModal = true,
 }) => {
   const gradientId = useId();
   const [currentEvent, setCurrentEvent] = useState<RequestStartEvent | null>(
@@ -101,21 +103,21 @@ export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps>
     return "bg-stone-100 text-stone-700 border-stone-200 dark:bg-stone-800 dark:text-stone-300 dark:border-stone-700";
   };
 
-  // Circular progress SVG geometry
-  const size = 76;
-  const strokeWidth = 5.5;
+  // Circular progress SVG geometry (bigger)
+  const size = 144;
+  const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
 
-  return (
+  const contentCard = (
     <div
       id="estimated-response-progress-container"
-      className="relative overflow-hidden rounded-2xl border border-stone-200/90 bg-stone-50/95 p-3.5 sm:p-4 shadow-sm backdrop-blur-xs transition-all dark:border-stone-800 dark:bg-stone-900/95 text-left"
+      className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-white p-6 sm:p-8 shadow-2xl backdrop-blur-md transition-all w-full max-w-sm text-center transform scale-100 flex flex-col items-center"
     >
       {/* 1. Pulsing Accent Top Border consistent with app tones */}
       <div
-        className={`absolute inset-x-0 top-0 h-[2.5px] transition-colors duration-300 ${
+        className={`absolute inset-x-0 top-0 h-[3px] transition-colors duration-300 ${
           isOvertime
             ? "bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 animate-pulse"
             : "bg-gradient-to-r from-indigo-500 via-blue-500 to-indigo-600 animate-pulse"
@@ -123,7 +125,7 @@ export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps>
       />
 
       {/* Header Info: Beacon, Action Label, Badges, Cancel Button */}
-      <div className="flex items-center justify-between gap-2 mb-3">
+      <div className="flex items-center justify-between w-full gap-2 mb-6">
         <div className="flex items-center gap-2 min-w-0">
           {/* Activity Beacon */}
           <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
@@ -139,13 +141,15 @@ export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps>
             />
           </span>
 
-          <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 truncate">
+          <span className="text-xs font-bold text-stone-900 truncate text-left">
             {currentEvent.action || actionLabel}
           </span>
+        </div>
 
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Provider Badge */}
           <span
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider flex-shrink-0 ${getProviderBadgeColor(
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${getProviderBadgeColor(
               currentEvent.provider
             )}`}
           >
@@ -153,135 +157,132 @@ export const EstimatedResponseProgress: React.FC<EstimatedResponseProgressProps>
             {currentEvent.provider}
           </span>
 
-          {/* Routing Mode Indicator */}
-          {currentEvent.isAutoRouting && (
-            <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 flex-shrink-0">
-              <Compass className="h-2.5 w-2.5 text-stone-500" />
-              Auto Route
+          {/* Cancellation Trigger */}
+          <button
+            type="button"
+            id="btn-abort-llm-request"
+            onClick={handleCancel}
+            aria-label="Hủy yêu cầu AI"
+            title="Hủy yêu cầu"
+            className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Body: Circular Progress Ring Centered */}
+      <div className="relative flex items-center justify-center my-2">
+        <svg
+          id="circular-progress-svg"
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          className="transform -rotate-90"
+        >
+          <defs>
+            <linearGradient id={`progress-gradient-${gradientId}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              {isOvertime ? (
+                <>
+                  <stop offset="0%" stopColor="#f59e0b" />
+                  <stop offset="100%" stopColor="#ea580c" />
+                </>
+              ) : (
+                <>
+                  <stop offset="0%" stopColor="#6366f1" />
+                  <stop offset="100%" stopColor="#4f46e5" />
+                </>
+              )}
+            </linearGradient>
+          </defs>
+
+          {/* Background Track Circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            fill="transparent"
+            className="text-stone-100 transition-colors"
+          />
+
+          {/* Dynamic Value Ring */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={`url(#progress-gradient-${gradientId})`}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            fill="transparent"
+            style={{
+              transition: "stroke-dashoffset 200ms ease-out",
+            }}
+          />
+        </svg>
+
+        {/* Centered Percentage & Time Content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-2xl font-black tabular-nums text-stone-900 leading-none">
+            {progressPercent}%
+          </span>
+          <span className="text-xs text-stone-500 font-bold tabular-nums mt-1.5 leading-none">
+            {elapsedSeconds}s đã qua
+          </span>
+        </div>
+      </div>
+
+      {/* Text Info Below the Circular Progress */}
+      <div className="flex flex-col items-center justify-center gap-2.5 w-full mt-5 pt-4 border-t border-stone-100">
+        {/* Active Model Indicator */}
+        <div className="flex items-center justify-center gap-1.5 text-xs text-stone-700 w-full">
+          <Cpu className="h-4 w-4 flex-shrink-0 text-indigo-500" />
+          <span
+            className="font-mono text-xs truncate text-stone-800 bg-stone-50 px-2.5 py-1 rounded-md border border-stone-200"
+            title={currentEvent.model}
+          >
+            {currentEvent.model}
+          </span>
+        </div>
+
+        {/* Timing details */}
+        <div className="flex items-center justify-center gap-1.5 text-xs text-stone-600 font-medium">
+          <Clock className="h-4 w-4 text-stone-400 flex-shrink-0" />
+          {isOvertime ? (
+            <span className="text-amber-700 font-semibold animate-pulse">
+              Đang hoàn tất... ({elapsedSeconds}s)
+            </span>
+          ) : (
+            <span>
+              Còn ~<strong className="text-stone-900 font-bold">{remainingSeconds.toFixed(1)}s</strong> (dự tính {(expectedMs / 1000).toFixed(0)}s)
             </span>
           )}
         </div>
 
-        {/* Cancellation Trigger */}
-        <button
-          type="button"
-          id="btn-abort-llm-request"
-          onClick={handleCancel}
-          aria-label="Hủy yêu cầu AI"
-          title="Hủy yêu cầu"
-          className="flex-shrink-0 rounded-lg p-1 text-stone-400 hover:bg-stone-200/70 hover:text-stone-700 dark:text-stone-500 dark:hover:bg-stone-800 dark:hover:text-stone-300 transition-colors"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* Main Body: Circular Progress Ring + Real-time Model & Timing Specs */}
-      <div className="flex items-center gap-4">
-        {/* Circular Progress Gauge */}
-        <div className="relative flex-shrink-0 w-[76px] h-[76px] flex items-center justify-center">
-          <svg
-            id="circular-progress-svg"
-            width={size}
-            height={size}
-            viewBox={`0 0 ${size} ${size}`}
-            className="transform -rotate-90"
-          >
-            <defs>
-              <linearGradient id={`progress-gradient-${gradientId}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                {isOvertime ? (
-                  <>
-                    <stop offset="0%" stopColor="#f59e0b" />
-                    <stop offset="100%" stopColor="#ea580c" />
-                  </>
-                ) : (
-                  <>
-                    <stop offset="0%" stopColor="#6366f1" />
-                    <stop offset="100%" stopColor="#4f46e5" />
-                  </>
-                )}
-              </linearGradient>
-            </defs>
-
-            {/* Background Track Circle */}
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              stroke="currentColor"
-              strokeWidth={strokeWidth}
-              fill="transparent"
-              className="text-stone-200 dark:text-stone-800 transition-colors"
-            />
-
-            {/* Dynamic Value Ring */}
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              stroke={`url(#progress-gradient-${gradientId})`}
-              strokeWidth={strokeWidth}
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              strokeLinecap="round"
-              fill="transparent"
-              style={{
-                transition: "stroke-dashoffset 200ms ease-out",
-              }}
-            />
-          </svg>
-
-          {/* Centered Percentage & Time Content */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span className="text-sm font-bold tabular-nums text-stone-900 dark:text-stone-100 leading-none">
-              {progressPercent}%
-            </span>
-            <span className="text-[10px] text-stone-500 dark:text-stone-400 font-medium tabular-nums mt-0.5 leading-none">
-              {elapsedSeconds}s
-            </span>
+        {/* Routing Mode Indicator */}
+        {currentEvent.isAutoRouting && (
+          <div className="flex items-center justify-center gap-1 text-[11px] font-medium text-indigo-600">
+            <Compass className="h-3.5 w-3.5" />
+            <span>Định tuyến thông minh</span>
           </div>
-        </div>
-
-        {/* Status Breakdown & Model Info */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-          {/* Active Model Indicator */}
-          <div className="flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-300">
-            <Cpu className="h-3.5 w-3.5 flex-shrink-0 text-stone-400" />
-            <span
-              className="font-mono text-[11px] truncate text-stone-700 dark:text-stone-300 bg-stone-100 dark:bg-stone-800/80 px-1.5 py-0.5 rounded border border-stone-200/80 dark:border-stone-700"
-              title={currentEvent.model}
-            >
-              {currentEvent.model}
-            </span>
-          </div>
-
-          {/* Timing details */}
-          <div className="flex items-center gap-1.5 text-[11px] text-stone-600 dark:text-stone-400 font-medium pt-0.5">
-            <Clock className="h-3 w-3 text-stone-400 flex-shrink-0" />
-            {isOvertime ? (
-              <span className="text-amber-700 dark:text-amber-400 font-semibold animate-pulse">
-                Đang hoàn tất phản hồi... ({elapsedSeconds}s)
-              </span>
-            ) : (
-              <span className="truncate">
-                Còn ~<strong className="text-stone-800 dark:text-stone-200 font-semibold">{remainingSeconds.toFixed(1)}s</strong> (dự tính {(expectedMs / 1000).toFixed(0)}s)
-              </span>
-            )}
-          </div>
-
-          {/* Micro status info */}
-          <div className="flex items-center gap-2 text-[10px] text-stone-500 dark:text-stone-400">
-            <span>{elapsedSeconds}s đã qua</span>
-            <span className="text-stone-300 dark:text-stone-700">•</span>
-            <span className="capitalize">{currentEvent.provider}</span>
-            {isOvertime && (
-              <>
-                <span className="text-stone-300 dark:text-stone-700">•</span>
-                <span className="text-amber-600 dark:text-amber-400">Chờ thêm chút</span>
-              </>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
+
+  if (asModal) {
+    return (
+      <div
+        id="estimated-response-progress-modal-backdrop"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      >
+        {contentCard}
+      </div>
+    );
+  }
+
+  return contentCard;
 };

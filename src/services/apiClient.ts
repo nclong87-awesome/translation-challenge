@@ -77,7 +77,10 @@ export async function generateChallenge(
 
   // If user explicitly chose sample mode and has no access key
   if (sampleMode && !accessKey) {
-    return mockGenerateChallenge(userCollection);
+    return mockGenerateChallenge(userCollection, {
+      abortSignal: options?.abortSignal,
+      action: options?.action || "Tạo thử thách dịch thuật (Sample Mode)",
+    });
   }
 
   // In purely static environment without server, accessKey in localStorage is mandatory
@@ -351,7 +354,10 @@ export async function evaluateChallengeTurn(
   const sampleMode = isStoredSampleMode();
 
   if (sampleMode && !accessKey) {
-    return mockProcessChallengeTurn(challenge, userMessage);
+    return mockProcessChallengeTurn(challenge, userMessage, {
+      abortSignal: options?.abortSignal,
+      action: options?.action || "Chấm điểm bản dịch (Sample Mode)",
+    });
   }
 
   // In purely static environment without server, accessKey in localStorage is mandatory
@@ -565,7 +571,10 @@ export async function askAiTutor(
   const sampleMode = isStoredSampleMode();
 
   if (sampleMode && !accessKey) {
-    return mockAskAiQuestion(challenge, userQuestion, userTranslation);
+    return mockAskAiQuestion(challenge, userQuestion, userTranslation, {
+      abortSignal: options?.abortSignal,
+      action: options?.action || "Gia sư AI giải đáp (Sample Mode)",
+    });
   }
 
   // In purely static environment without server, accessKey in localStorage is mandatory
