@@ -32,10 +32,6 @@ export async function callCloudflareWorkerWithLogging(params: {
       "X-Proxy-Key": params.accessKey, // MANDATORY Cloudflare Workers ingress header
     };
 
-    if (params.accessKey) {
-      headers["Authorization"] = `Bearer ${params.accessKey}`;
-    }
-
     if (isGeminiNative) {
       fetchUrl = `${cleanUrl}/models/${params.model}:generateContent`;
       headers["x-goog-api-key"] = params.accessKey;

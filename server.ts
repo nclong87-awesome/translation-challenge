@@ -31,18 +31,11 @@ const PLACEHOLDERS = new Set([
 // Helper to extract Cloudflare Worker access key from incoming request headers or server env
 function extractProxyKey(req: Request): string {
   const serverKey = process.env.ACCESS_KEY || process.env.ACESS_KEY || "";
-  const headerKey = req.headers["x-access-key"];
+  const headerKey = req.headers["x-proxy-key"];
   if (typeof headerKey === "string" && headerKey.trim()) {
     const trimmed = headerKey.trim();
     if (!PLACEHOLDERS.has(trimmed.toLowerCase())) {
       return trimmed;
-    }
-  }
-  const auth = req.headers["authorization"];
-  if (typeof auth === "string" && auth.startsWith("Bearer ")) {
-    const token = auth.slice(7).trim();
-    if (!PLACEHOLDERS.has(token.toLowerCase())) {
-      return token;
     }
   }
   return serverKey;

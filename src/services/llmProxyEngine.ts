@@ -752,7 +752,6 @@ export async function executeUpstreamCall(
   // MANDATORY HEADER: X-Proxy-Key
   if (accessKey) {
     headers["X-Proxy-Key"] = accessKey;
-    headers["Authorization"] = `Bearer ${accessKey}`;
   }
 
   if (candidate.provider === "openrouter") {
