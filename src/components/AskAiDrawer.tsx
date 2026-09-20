@@ -248,15 +248,7 @@ export function AskAiDrawer({
             </div>
           ))}
 
-          {/* Real-time Estimated Progress Indicator during loading */}
-          {loading && (
-            <div className="w-full my-2">
-              <EstimatedResponseProgress
-                actionLabel="Gia sư AI đang phân tích & trả lời"
-                onAbort={handleAbort}
-              />
-            </div>
-          )}
+          {/* Loading indicator handled by global modal dialog */}
 
           {/* Tier 3 Retry Countdown Modal on failure */}
           {errorMessage && (

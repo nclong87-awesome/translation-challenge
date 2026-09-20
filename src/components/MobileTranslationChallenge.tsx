@@ -451,12 +451,7 @@ export function MobileTranslationChallenge({
       <div className="flex-1 p-3.5 sm:p-4 flex flex-col gap-3.5 overflow-y-auto">
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center p-4 text-center text-stone-600 gap-4 min-h-[320px]">
-            <div className="w-full max-w-md">
-              <EstimatedResponseProgress
-                actionLabel="Đang tạo thử thách dịch thuật"
-                onAbort={handleAbortChallengeGeneration}
-              />
-            </div>
+            <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
             <p className="text-xs text-stone-500">
               {eligibleCount > 0
                 ? "Đang chọn từ trong bộ sưu tập cá nhân (>24h)..."
@@ -836,15 +831,6 @@ export function MobileTranslationChallenge({
 
       {/* Bottom Sticky Action Bar (Thumb-Level Mobile Ergonomics) */}
       <footer className="sticky bottom-0 z-20 bg-white/95 backdrop-blur-md p-3.5 sm:p-4 border-t border-stone-200/80 flex flex-col gap-3 shadow-lg">
-        {submitting && (
-          <div className="w-full">
-            <EstimatedResponseProgress
-              actionLabel="Đang chấm bài & phân tích dịch thuật"
-              onAbort={handleAbortEvaluation}
-            />
-          </div>
-        )}
-
         {evalError && !submitting && (
           <EstimatedResponseProgress
             asModal={true}

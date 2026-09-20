@@ -984,6 +984,8 @@ export async function executeChatCompletionWithRotation(
 
   let maxRetries = 1; // Default to 1: surface errors immediately to show countdown banner instead of silently retrying internally
 
+  const controller = new AbortController();
+
   if (typeof accessKeyOrOptions === "object" && accessKeyOrOptions !== null) {
     accessKey = accessKeyOrOptions.accessKey;
     timeoutMs = accessKeyOrOptions.timeoutMs ?? timeoutMsInput;
@@ -997,6 +999,14 @@ export async function executeChatCompletionWithRotation(
     }
   } else {
     accessKey = accessKeyOrOptions;
+  }
+
+  if (abortSignal) {
+    if (abortSignal.aborted) {
+      controller.abort(abortSignal.reason);
+    } else {
+      abortSignal.addEventListener("abort", () => controller.abort(abortSignal.reason), { once: true });
+    }
   }
 
   if (!accessKey && typeof process !== "undefined" && process.env) {
@@ -1046,11 +1056,12 @@ export async function executeChatCompletionWithRotation(
       timestamp: startTime,
       expectedDurationMs,
       isAutoRouting: routing.isAutoRouting,
-      action
+      action,
+      abortController: controller
     });
 
     try {
-      const upstreamRes = await executeUpstreamCall(candidate, payload, timeoutMs, accessKey, abortSignal);
+      const upstreamRes = await executeUpstreamCall(candidate, payload, timeoutMs, accessKey, controller.signal);
       const durationMs = Date.now() - startTime;
 
       if (upstreamRes.ok) {

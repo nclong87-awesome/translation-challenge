@@ -7,6 +7,7 @@ import React, { useState } from "react";
 import { KeyRound, ShieldCheck } from "lucide-react";
 import { MobileTranslationChallenge } from "./components/MobileTranslationChallenge";
 import { AccessKeyModal } from "./components/AccessKeyModal";
+import { EstimatedResponseProgress } from "./components/EstimatedResponseProgress";
 import {
   getStoredAccessKey,
   setStoredAccessKey,
@@ -121,6 +122,9 @@ export default function App() {
         onSave={handleSaveKey}
         onSkipSampleMode={handleSkipToSampleMode}
       />
+
+      {/* Global LLM Request Progress Modal Dialog */}
+      <EstimatedResponseProgress />
     </div>
   );
 }
