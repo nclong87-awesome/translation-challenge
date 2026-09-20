@@ -74,6 +74,7 @@ export function MobileTranslationChallenge({
   const [evalError, setEvalError] = useState<string | null>(null);
   const [evalFailedModel, setEvalFailedModel] = useState<string | undefined>(undefined);
   const [evalRetryCount, setEvalRetryCount] = useState<number>(0);
+  const [isFocused, setIsFocused] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const challengeAbortControllerRef = useRef<AbortController | null>(null);
@@ -858,6 +859,8 @@ export function MobileTranslationChallenge({
                 id="input-translation"
                 value={userTranslation}
                 onChange={(e) => setUserTranslation(e.target.value)}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
